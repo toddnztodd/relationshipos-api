@@ -1,295 +1,227 @@
-# RelationshipOS — Deployment Guide
+# RelationshipOS Backend — Deployment Guide for Todd
 
-**Time required:** 5-10 minutes per platform. Pick one.
+**Total time: about 10 minutes. No coding required.**
 
-This guide walks you through deploying the RelationshipOS backend to a permanent URL that does not sleep. Three platforms are supported, listed in order of recommendation.
-
----
-
-## Table of Contents
-
-1. [Quick Summary](#quick-summary)
-2. [Option A: Render.com (Recommended)](#option-a-rendercom-recommended)
-3. [Option B: Railway.app](#option-b-railwayapp)
-4. [Option C: Fly.io](#option-c-flyio)
-5. [After Deployment: Connect the Frontend](#after-deployment-connect-the-frontend)
-6. [Environment Variables Reference](#environment-variables-reference)
-7. [Troubleshooting](#troubleshooting)
+This guide walks you through three steps:
+1. Create a GitHub repository and upload the backend code
+2. Connect it to Render.com to host it permanently
+3. Test that it is working
 
 ---
 
-## Quick Summary
+## What You Need Before Starting
 
-| Platform | Free Tier | Sleep Behaviour | Deploy Method | Credit Card |
-|----------|-----------|-----------------|---------------|-------------|
-| **Render** | 750 hrs/month | Sleeps after 15 min idle, wakes on request (~30s cold start) | GitHub repo + Blueprint | Not required for free tier |
-| **Railway** | $5 credit trial | No sleep on trial | GitHub repo | Required after trial |
-| **Fly.io** | 3 shared VMs free | Auto-stop/start (configurable) | CLI + Dockerfile | Required (not charged on free tier) |
-
-> **Recommendation:** Start with **Render**. It is the simplest, requires no credit card, and the Blueprint file (`render.yaml`) is already configured.
+- The `RelationshipOS-Backend.zip` file (you have this)
+- A web browser
+- An email address to sign up with
 
 ---
 
-## Prerequisites (All Platforms)
+## STEP 1 — Create a GitHub Account (skip if you already have one)
 
-1. **Push this repo to GitHub:**
-
-```bash
-# Create a new repo at https://github.com/new (name: relationshipos-api)
-# Then push:
-cd relationshipos
-git remote add origin https://github.com/YOUR_USERNAME/relationshipos-api.git
-git branch -M main
-git push -u origin main
-```
-
-> If you do not have git configured, you can also upload via GitHub's web interface: drag-and-drop the project folder into a new repository.
+1. Go to **[github.com/signup](https://github.com/signup)**
+2. Enter your email address, create a password, and choose a username
+   - Suggested username: `toddnztodd`
+3. Verify your email address when GitHub sends you a confirmation email
+4. You are now logged in to GitHub
 
 ---
 
-## Option A: Render.com (Recommended)
+## STEP 2 — Create the Repository on GitHub
 
-**Time: ~3 minutes. No credit card required.**
+A "repository" is just a folder on GitHub that stores your code.
 
-### Step 1 — Create a Render Account
+1. Go to **[github.com/new](https://github.com/new)**
 
-Go to [dashboard.render.com/register](https://dashboard.render.com/register) and sign up with GitHub (recommended for automatic repo access).
+2. Fill in the form exactly like this:
 
-### Step 2 — Deploy via Blueprint
+   | Field | What to type |
+   |-------|-------------|
+   | **Repository name** | `relationshipos-api` |
+   | **Description** | RelationshipOS backend API |
+   | **Public / Private** | Select **Public** |
+   | **Add a README file** | Leave this **unticked** |
 
-1. Go to [dashboard.render.com/select-repo?type=blueprint](https://dashboard.render.com/select-repo?type=blueprint)
-2. Select your `relationshipos-api` repository
-3. Render reads the `render.yaml` file and shows the service configuration
-4. Click **Apply** — that is it
+3. Click the green **"Create repository"** button at the bottom
 
-Render will:
-- Build the Docker image
-- Auto-generate a secure `JWT_SECRET_KEY`
-- Deploy to a URL like `https://relationshipos-api.onrender.com`
-- Set up health checks at `/health`
+4. You will land on a page that says "Quick setup". **Leave this page open** — you will come back to it.
 
-### Step 3 — Verify
+---
 
-```bash
-curl https://relationshipos-api.onrender.com/health
-# → {"status":"healthy"}
-```
+## STEP 3 — Unzip and Upload the Code
 
-### Step 4 — Note Your URL
+### 3a — Unzip the file
 
-Your permanent backend URL will be:
+- **On Mac:** Double-click `RelationshipOS-Backend.zip` — a folder called `relationshipos` will appear
+- **On Windows:** Right-click `RelationshipOS-Backend.zip` → click **"Extract All"** → click **Extract**
+
+### 3b — Upload to GitHub
+
+1. Go back to the GitHub page from Step 2 (your new empty repository)
+
+2. Click the link that says **"uploading an existing file"**
+   - It appears in the sentence: *"...or create a new file or importing an existing repository"*
+   - If you cannot see it, go to: `https://github.com/toddnztodd/relationshipos-api/upload/main`
+
+3. Open the unzipped folder on your computer. You will see files and folders inside it (like `app`, `Dockerfile`, `requirements.txt`, etc.)
+
+4. **Select everything inside the folder** (Cmd+A on Mac, Ctrl+A on Windows) and **drag it all** into the GitHub upload area in your browser
+
+5. Wait for all files to finish uploading (you will see a list of file names appear)
+
+6. Scroll down to the **"Commit changes"** section at the bottom of the page
+
+7. In the first text box (where it says "Add files via upload"), type:
+   ```
+   Initial commit — RelationshipOS backend
+   ```
+
+8. Click the green **"Commit changes"** button
+
+9. Wait about 30 seconds. When it finishes, you will see all your files listed in the repository. 
+
+---
+
+## STEP 4 — Create a Render.com Account
+
+Render.com will host your backend so it is always available online.
+
+1. Go to **[render.com](https://render.com)** and click **"Get Started for Free"**
+
+2. Click **"Sign up with GitHub"** — this connects Render to your GitHub account automatically
+
+3. Authorise Render to access your GitHub repositories when prompted
+
+4. You are now logged in to Render
+
+---
+
+## STEP 5 — Deploy the Backend on Render
+
+1. In the Render dashboard, click the **"New +"** button (top right)
+
+2. Select **"Web Service"** from the dropdown
+
+3. On the next screen, click **"Connect account"** next to GitHub if it is not already connected
+
+4. You will see a list of your GitHub repositories. Find **`relationshipos-api`** and click **"Connect"**
+
+5. Render will show you a configuration form. Fill it in like this:
+
+   | Field | What to enter |
+   |-------|--------------|
+   | **Name** | `relationshipos-api` |
+   | **Region** | `Oregon (US West)` or the closest to you |
+   | **Branch** | `main` |
+   | **Runtime** | `Docker` |
+   | **Instance Type** | `Free` |
+
+   > **Note:** Render should automatically detect the `Dockerfile` in your repository. If it asks for a "Build Command", leave it blank.
+
+6. Scroll down to the **"Environment Variables"** section. Click **"Add Environment Variable"** and add these one at a time:
+
+   | Key | Value |
+   |-----|-------|
+   | `JWT_SECRET_KEY` | Click **"Generate"** button next to this field (Render will create a secure random value for you) |
+   | `CORS_ORIGINS` | `*` |
+   | `DATABASE_URL` | `sqlite+aiosqlite:///./data/relationshipos.db` |
+
+7. Click the **"Create Web Service"** button at the bottom
+
+8. Render will now build and deploy your backend. This takes **3–5 minutes** the first time. You will see a log of what is happening — this is normal.
+
+9. When it is done, the status at the top will change from **"In progress"** to **"Live"** (shown in green)
+
+---
+
+## STEP 6 — Find Your Permanent Backend URL
+
+1. At the top of your Render service page, you will see a URL that looks like:
+   ```
+   https://relationshipos-api.onrender.com
+   ```
+
+2. Click that link. You should see:
+   ```json
+   {"app":"RelationshipOS","version":"1.0.0","status":"running","docs":"/docs"}
+   ```
+
+3. To test the health check, add `/health` to the URL:
+   ```
+   https://relationshipos-api.onrender.com/health
+   ```
+   You should see: `{"status":"healthy"}`
+
+4. To see the full API documentation, add `/docs` to the URL:
+   ```
+   https://relationshipos-api.onrender.com/docs
+   ```
+
+**Your permanent backend URL is:**
 ```
 https://relationshipos-api.onrender.com/api/v1
 ```
 
-> **Note:** On the free tier, the service sleeps after 15 minutes of inactivity. The first request after sleep takes approximately 30 seconds. Subsequent requests are fast. For a production app, upgrade to the $7/month Starter plan to eliminate sleep.
+Write this down — you will need it to connect the frontend.
 
 ---
 
-## Option B: Railway.app
+## STEP 7 — Connect the Frontend to the New Backend
 
-**Time: ~5 minutes. Credit card required after free trial.**
+The frontend app (relateapp-q2dmbaem.manus.space) currently points at the old sandbox URL. To reconnect it:
 
-### Step 1 — Create a Railway Account
+1. Send this URL to your developer:
+   ```
+   https://relationshipos-api.onrender.com/api/v1
+   ```
 
-Go to [railway.com](https://railway.com) and sign up with GitHub.
+2. Ask them to update `VITE_API_URL` in the frontend and redeploy
 
-### Step 2 — Create a New Project
-
-1. Click **New Project** → **Deploy from GitHub Repo**
-2. Select your `relationshipos-api` repository
-3. Railway auto-detects the `Dockerfile` and `railway.json`
-
-### Step 3 — Set Environment Variables
-
-In the Railway dashboard, go to your service → **Variables** tab and add:
-
-| Variable | Value |
-|----------|-------|
-| `JWT_SECRET_KEY` | (click "Generate" or paste a random 32-char string) |
-| `CORS_ORIGINS` | `*` |
-| `DATABASE_URL` | `sqlite+aiosqlite:///./data/relationshipos.db` |
-
-### Step 4 — Deploy
-
-Railway deploys automatically when you push to GitHub. Your URL will be something like:
-```
-https://relationshipos-api-production.up.railway.app/api/v1
-```
-
-### Step 5 — Generate a Public Domain
-
-Go to **Settings** → **Networking** → **Generate Domain** to get a public URL.
-
----
-
-## Option C: Fly.io
-
-**Time: ~5 minutes. Credit card required (not charged on free tier).**
-
-### Step 1 — Install the Fly CLI
-
-```bash
-# macOS
-brew install flyctl
-
-# Linux
-curl -L https://fly.io/install.sh | sh
-
-# Windows
-powershell -Command "iwr https://fly.io/install.ps1 -useb | iex"
-```
-
-### Step 2 — Sign Up and Log In
-
-```bash
-fly auth signup    # Opens browser to create account
-fly auth login     # Or log in if you already have an account
-```
-
-### Step 3 — Launch the App
+**Or**, if you want to do it yourself using the patch script included in the zip:
 
 ```bash
 cd relationshipos
-fly launch --copy-config --no-deploy
+./scripts/patch_frontend.sh https://relationshipos-api.onrender.com/api/v1
 ```
 
-When prompted:
-- App name: `relationshipos-api` (or accept the generated name)
-- Region: `syd` (Sydney — closest to NZ)
-- Do NOT set up a database (we use SQLite)
-
-### Step 4 — Set Secrets
-
-```bash
-fly secrets set JWT_SECRET_KEY=$(openssl rand -hex 32)
-```
-
-### Step 5 — Deploy
-
-```bash
-fly deploy
-```
-
-Your URL will be:
-```
-https://relationshipos-api.fly.dev/api/v1
-```
-
-### Step 6 — Verify
-
-```bash
-curl https://relationshipos-api.fly.dev/health
-# → {"status":"healthy"}
-```
+This creates a `frontend_patched/` folder you can drag-and-drop onto Netlify or Vercel.
 
 ---
 
-## After Deployment: Connect the Frontend
+## Important Notes
 
-Once you have a permanent backend URL, you need to update the frontend to point at it.
+### Free Tier Sleep Behaviour
 
-### Option 1: Use the Patch Script (Quick, No Rebuild)
+On Render's free tier, the backend will go to sleep after **15 minutes of no activity**. The first request after it wakes up takes about **30 seconds**. Everything after that is fast.
 
-A script is included that downloads the current deployed frontend, patches the hardcoded backend URL, and outputs a new static site ready to redeploy:
+To prevent sleeping, upgrade to Render's **Starter plan ($7/month)** in the Render dashboard under your service settings.
 
-```bash
-cd relationshipos
-./scripts/patch_frontend.sh https://YOUR-BACKEND-URL.onrender.com/api/v1
-```
+### Test Login Credentials
 
-This creates a `frontend_patched/` directory. Deploy it as a static site:
+Once deployed, you can log in with:
 
-```bash
-# Netlify (free)
-cd frontend_patched
-npx netlify deploy --prod --dir=.
+| Email | Password |
+|-------|----------|
+| `todd@eves.co.nz` | `password123` |
+| `demo@relationshipos.app` | `demo1234` |
 
-# Or Vercel (free)
-cd frontend_patched
-npx vercel --prod
-```
+### If Something Goes Wrong
 
-### Option 2: Rebuild the Frontend (Proper, Long-Term)
-
-If you have access to the frontend source code, update the API configuration:
-
-1. Create a `.env` file in the frontend project root:
-```
-VITE_API_URL=https://YOUR-BACKEND-URL.onrender.com/api/v1
-```
-
-2. Update `client/src/lib/api.ts` (or wherever the axios instance is created):
-```typescript
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
-const api = axios.create({ baseURL: API_BASE, ... });
-```
-
-3. Rebuild and redeploy:
-```bash
-pnpm build
-# Deploy the dist/ folder
-```
+- In the Render dashboard, click on your service → click **"Logs"** tab to see what happened
+- Common fix: click **"Manual Deploy"** → **"Deploy latest commit"** to restart
 
 ---
 
-## Environment Variables Reference
+## Summary
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `DATABASE_URL` | No | `sqlite+aiosqlite:///./data/relationshipos.db` | Database connection string. Use `postgresql+asyncpg://...` for PostgreSQL. |
-| `JWT_SECRET_KEY` | **Yes** | `change-me-in-production` | Secret key for signing JWT tokens. **Must be changed in production.** |
-| `CORS_ORIGINS` | No | `*` | Comma-separated list of allowed origins. Set to your frontend URL in production. |
-| `APP_NAME` | No | `RelationshipOS` | Application name shown in API docs. |
-| `APP_VERSION` | No | `1.0.0` | Application version. |
-| `PORT` | No | `8000` | Server port. Most platforms set this automatically. |
+| Step | What you did |
+|------|-------------|
+| 1 | Created a GitHub account |
+| 2 | Created a `relationshipos-api` repository |
+| 3 | Uploaded all the backend code |
+| 4 | Created a Render.com account |
+| 5 | Deployed the backend as a Web Service |
+| 6 | Got your permanent URL: `https://relationshipos-api.onrender.com` |
+| 7 | Updated the frontend to use the new URL |
 
----
-
-## Troubleshooting
-
-### "502 Bad Gateway" after deploy
-
-The service is still starting. Wait 30 seconds and try again. Check the deploy logs in your platform's dashboard.
-
-### "Connection refused" from frontend
-
-The frontend is pointing at the old sandbox URL. Run the patch script or rebuild the frontend with the new backend URL.
-
-### Database is empty after deploy
-
-The `seed_data.py` script runs automatically on every container start. If you see empty responses, check the deploy logs for errors during seeding.
-
-### CORS errors in browser console
-
-Set `CORS_ORIGINS` to your frontend's exact URL (e.g., `https://relateapp-q2dmbaem.manus.space`). Using `*` works for development but is not recommended for production.
-
-### Upgrading to PostgreSQL
-
-1. Provision a PostgreSQL database (Render, Railway, and Fly all offer managed Postgres)
-2. Set `DATABASE_URL` to the PostgreSQL connection string:
-   ```
-   postgresql+asyncpg://user:password@host:5432/relationshipos
-   ```
-3. Remove `aiosqlite` from requirements and add `asyncpg` (already included)
-4. Redeploy — tables are created automatically on startup
-
----
-
-## Test Credentials
-
-After deployment with seed data:
-
-| Email | Password | Role |
-|-------|----------|------|
-| `todd@eves.co.nz` | `password123` | Primary user (Todd Hilleard) |
-| `demo@relationshipos.app` | `demo1234` | Demo user |
-
----
-
-## API Documentation
-
-Once deployed, visit:
-- **Swagger UI:** `https://YOUR-URL/docs`
-- **ReDoc:** `https://YOUR-URL/redoc`
-- **Health Check:** `https://YOUR-URL/health`
+You now have a permanently hosted backend that will not disappear when the sandbox sleeps.
