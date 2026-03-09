@@ -18,9 +18,11 @@ services:
       - key: DATABASE_URL
         value: sqlite+aiosqlite:///./data/relationshipos.db
       - key: JWT_SECRET_KEY
-        generateValue: true          # Render auto-generates a secure random value
+        value: relateos-secret-key-2024-production
+      - key: SECRET_KEY
+        value: relateos-secret-key-2024-production
       - key: CORS_ORIGINS
-        value: "*"                   # Tighten to your frontend URL after deploy
+        value: "*"
       - key: APP_NAME
         value: RelationshipOS
       - key: APP_VERSION
