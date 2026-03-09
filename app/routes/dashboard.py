@@ -292,6 +292,21 @@ async def get_dashboard(
     )
 
 
+# ── Dashboard Summary Alias (frontend compatibility) ─────────────────────────
+
+
+@router.get("/dashboard/summary", response_model=DashboardResponse, tags=["Dashboard"])
+async def get_dashboard_summary(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Alias for /dashboard — the frontend calls this path.
+    Returns the same aggregated dashboard data.
+    """
+    return await get_dashboard(db=db, current_user=current_user)
+
+
 # ── AI Suggestions (Stub) ─────────────────────────────────────────────────────
 
 

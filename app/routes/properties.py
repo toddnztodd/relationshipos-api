@@ -62,6 +62,23 @@ async def list_properties(
     return result.scalars().all()
 
 
+@router.get("/doorknock", response_model=list[PropertyResponse])
+async def list_doorknock_properties(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Return all properties suitable for door-knocking (all properties for the user).
+    This is an alias used by the frontend for the door-knock workflow.
+    """
+    result = await db.execute(
+        select(Property)
+        .where(Property.user_id == current_user.id)
+        .order_by(Property.suburb, Property.address)
+    )
+    return result.scalars().all()
+
+
 @router.get("/{property_id}", response_model=PropertyResponse)
 async def get_property(
     property_id: int,
