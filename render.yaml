@@ -1,0 +1,29 @@
+# ─────────────────────────────────────────────────────────────
+# Render.com Blueprint — RelationshipOS Backend
+# ─────────────────────────────────────────────────────────────
+# Deploy in one click:
+#   1. Push this repo to GitHub
+#   2. Go to https://dashboard.render.com/select-repo?type=blueprint
+#   3. Select the repo → Render reads this file and creates everything
+# ─────────────────────────────────────────────────────────────
+
+services:
+  - type: web
+    name: relationshipos-api
+    runtime: docker
+    plan: free                       # Free tier — 750 hrs/month
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        value: sqlite+aiosqlite:///./data/relationshipos.db
+      - key: JWT_SECRET_KEY
+        generateValue: true          # Render auto-generates a secure random value
+      - key: CORS_ORIGINS
+        value: "*"                   # Tighten to your frontend URL after deploy
+      - key: APP_NAME
+        value: RelationshipOS
+      - key: APP_VERSION
+        value: "1.0.0"
+      - key: PORT
+        value: "10000"               # Render free tier uses port 10000
