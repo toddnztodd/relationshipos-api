@@ -77,6 +77,7 @@ class CadenceSummary(BaseModel):
     green: int = 0
     amber: int = 0
     red: int = 0
+    needs_attention: int = 0  # contacts overdue by tier cadence (A>30d, B>60d, C>90d)
 
 
 class TierBreakdown(BaseModel):
@@ -96,6 +97,7 @@ class DashboardResponse(BaseModel):
     cadence_statuses: list[PersonCadenceStatus]  # limited by ?cadence_limit (default 20)
     cadence_summary: CadenceSummary = CadenceSummary()
     tier_breakdown: TierBreakdown = TierBreakdown()
+    active_listings: int = 0  # count of properties for this user
     cached: bool = False  # True if served from cache
 
 

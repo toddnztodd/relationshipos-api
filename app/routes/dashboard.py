@@ -178,6 +178,7 @@ async def _build_dashboard(
     green_count = 0
     amber_count = 0
     red_count = 0
+    needs_attention_count = 0
     tier_counts: dict[str, int] = {"A": 0, "B": 0, "C": 0, "D": 0}
 
     for person in all_people:
@@ -191,6 +192,14 @@ async def _build_dashboard(
             amber_count += 1
         else:
             red_count += 1
+
+        # needs_attention: contacts overdue by their tier cadence window
+        # A-tier: overdue if no contact in 30+ days (or never)
+        # B-tier: overdue if no contact in 60+ days (or never)
+        # C-tier: overdue if no contact in 90+ days (or never)
+        window = get_cadence_window(person.tier)
+        if last_m is None or (now - (last_m if last_m.tzinfo else last_m.replace(tzinfo=timezone.utc))).days > window:
+            needs_attention_count += 1
 
         # Count for tier breakdown
         tier_val = person.tier.value if person.tier else "C"
@@ -327,6 +336,12 @@ async def _build_dashboard(
                     properties_visited=person_props_map.get(pid, []),
                 ))
 
+    # ── QUERY 7: Active listings count ──
+    listings_result = await db.execute(
+        select(func.count(Property.id)).where(Property.user_id == uid)
+    )
+    active_listings_count = listings_result.scalar() or 0
+
     response = DashboardResponse(
         a_tier_drifting=a_tier_drifting,
         due_for_contact_this_week=due_for_contact,
@@ -338,6 +353,7 @@ async def _build_dashboard(
             green=green_count,
             amber=amber_count,
             red=red_count,
+            needs_attention=needs_attention_count,
         ),
         tier_breakdown=TierBreakdown(
             A=tier_counts["A"],
@@ -346,6 +362,7 @@ async def _build_dashboard(
             D=tier_counts["D"],
             total=len(all_people),
         ),
+        active_listings=active_listings_count,
         cached=False,
     )
     return response.model_dump()
