@@ -309,7 +309,8 @@ class DoorKnockSession(Base):
     interest_level = Column(Integer, nullable=True)
     notes = Column(Text, nullable=True)
     follow_up_date = Column(Date, nullable=True)
-    marketing_drop = Column(String(50), nullable=True)  # just_listed | just_sold | letter | promo_item | none
+    marketing_drop = Column(String(50), nullable=True)  # just_listed | just_sold | letter | free_pen | other
+    marketing_drop_note = Column(Text, nullable=True)  # custom note when marketing_drop = 'other'
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # Relationships

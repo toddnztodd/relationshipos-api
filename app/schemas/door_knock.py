@@ -6,7 +6,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 # Valid marketing drop types
-MarketingDropType = Optional[Literal["just_listed", "just_sold", "letter", "promo_item", "none"]]
+MarketingDropType = Optional[Literal["just_listed", "just_sold", "letter", "free_pen", "other"]]
 
 
 class DoorKnockCreate(BaseModel):
@@ -18,7 +18,11 @@ class DoorKnockCreate(BaseModel):
     follow_up_date: Optional[date] = None
     marketing_drop: MarketingDropType = Field(
         None,
-        description="Marketing material left at the property: just_listed | just_sold | letter | promo_item | none",
+        description="Marketing material left at the property: just_listed | just_sold | letter | free_pen | other",
+    )
+    marketing_drop_note: Optional[str] = Field(
+        None,
+        description="Custom note when marketing_drop is 'other'",
     )
 
 
@@ -32,6 +36,7 @@ class DoorKnockResponse(BaseModel):
     notes: Optional[str] = None
     follow_up_date: Optional[date] = None
     marketing_drop: MarketingDropType = None
+    marketing_drop_note: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
