@@ -5,12 +5,10 @@ environment variables set. Override any value via environment variable or
 a .env file.
 
 DATABASE_URL handling:
-  Accepts any of these formats and auto-converts for async SQLAlchemy:
-    postgres://...          -> postgresql+asyncpg://...
-    postgresql://...        -> postgresql+asyncpg://...
-    postgresql+asyncpg://...  (used as-is)
-    sqlite:///...           -> sqlite+aiosqlite:///...
-    sqlite+aiosqlite:///... (used as-is)
+  The Neon PostgreSQL connection string is hardcoded as the production
+  database. If a DATABASE_URL env var is set AND it points to PostgreSQL,
+  that value is used instead. SQLite env vars are ignored to prevent
+  accidental data loss on ephemeral platforms like Render.
 
 CORS_ORIGINS handling:
   pydantic-settings 2.x tries to JSON-decode any field typed as list[str]
@@ -22,17 +20,36 @@ CORS_ORIGINS handling:
 from __future__ import annotations
 
 import json
+import os
+import re
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings
 
 
-# Default Neon PostgreSQL connection string (persistent across deploys)
-_DEFAULT_DATABASE_URL = (
+# ── Neon PostgreSQL (production) ─────────────────────────────────────────────
+# This is the permanent database. Data persists across all deploys.
+_NEON_DATABASE_URL = (
     "postgresql://neondb_owner:npg_HvYka2b5nPOZ"
     "@ep-autumn-sound-a7om89h2-pooler.ap-southeast-2.aws.neon.tech"
     "/neondb?sslmode=require"
 )
+
+
+def _resolve_database_url() -> str:
+    """Determine the correct DATABASE_URL.
+
+    Priority:
+      1. If DATABASE_URL env var is set AND contains 'postgresql' or 'postgres://',
+         use it (allows overriding with a different PostgreSQL instance).
+      2. Otherwise, always use the hardcoded Neon PostgreSQL URL.
+         This prevents Render's SQLite env var from overriding the production DB.
+    """
+    env_url = os.environ.get("DATABASE_URL", "").strip()
+    if env_url and ("postgresql" in env_url or "postgres://" in env_url):
+        return env_url
+    # Ignore SQLite or empty — always fall back to Neon
+    return _NEON_DATABASE_URL
 
 
 class Settings(BaseSettings):
@@ -42,19 +59,18 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     # ── Database ──────────────────────────────────────────────────────────────
-    # Defaults to Neon PostgreSQL. Override via DATABASE_URL env var.
-    DATABASE_URL: str = _DEFAULT_DATABASE_URL
+    # Resolved at import time — see _resolve_database_url() above.
+    DATABASE_URL: str = _resolve_database_url()
 
     @property
     def async_database_url(self) -> str:
         """Return the DATABASE_URL converted for async SQLAlchemy."""
-        url = self.DATABASE_URL.strip()
+        # Always re-resolve to ensure Neon is used even if pydantic loaded SQLite
+        url = _resolve_database_url()
 
         # Strip channel_binding param (not supported by asyncpg)
         if "channel_binding=" in url:
-            import re
             url = re.sub(r'[&?]channel_binding=[^&]*', '', url)
-            # Clean up trailing ? or leading & after removal
             url = url.rstrip('?').rstrip('&')
 
         # Handle Render/Heroku-style postgres:// URLs
@@ -64,7 +80,7 @@ class Settings(BaseSettings):
             url = "postgresql+asyncpg://" + url[len("postgresql://"):]
         elif url.startswith("postgresql+asyncpg://"):
             pass
-        # SQLite handling
+        # SQLite handling (only for local dev when explicitly forced)
         elif url.startswith("sqlite:///"):
             url = "sqlite+aiosqlite:///" + url[len("sqlite:///"):]
         elif url.startswith("sqlite+aiosqlite:///"):
@@ -75,7 +91,8 @@ class Settings(BaseSettings):
     @property
     def is_postgres(self) -> bool:
         """Return True if using PostgreSQL."""
-        return "postgresql" in self.DATABASE_URL or "postgres://" in self.DATABASE_URL
+        url = _resolve_database_url()
+        return "postgresql" in url or "postgres://" in url
 
     # ── JWT ───────────────────────────────────────────────────────────────────
     JWT_SECRET_KEY: str = "relateos-secret-key-2024-production"

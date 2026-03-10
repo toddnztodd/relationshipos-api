@@ -75,3 +75,25 @@ async def root():
 @app.get("/health", tags=["Health"])
 async def health_check():
     return {"status": "healthy"}
+
+
+@app.get("/debug/db", tags=["Debug"])
+async def debug_db():
+    """Temporary endpoint to verify which database is in use."""
+    from app.config import _resolve_database_url
+    import os
+    url = _resolve_database_url()
+    env_url = os.environ.get("DATABASE_URL", "NOT SET")
+    # Mask credentials in output
+    def mask(u: str) -> str:
+        if "@" in u:
+            parts = u.split("@")
+            return parts[0][:15] + "...@" + parts[1]
+        return u[:30] + "..."
+    return {
+        "resolved_url": mask(url),
+        "env_var_set": env_url != "NOT SET",
+        "env_var_value": mask(env_url) if env_url != "NOT SET" else "NOT SET",
+        "is_postgres": "postgresql" in url or "postgres://" in url,
+        "is_neon": "neon.tech" in url,
+    }
