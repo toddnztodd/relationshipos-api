@@ -99,7 +99,7 @@ async def root():
     }
 
 
-@app.get("/health", tags=["Health"], methods=["GET", "HEAD"])
+@app.api_route("/health", methods=["GET", "HEAD"], tags=["Health"])
 async def health_check():
     return {"status": "healthy"}
 
