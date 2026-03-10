@@ -36,7 +36,7 @@ async def list_properties(
     has_pool: Optional[bool] = Query(None),
     search: Optional[str] = Query(None, description="Search address or suburb"),
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(200, ge=1, le=2000),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

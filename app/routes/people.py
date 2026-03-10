@@ -3,7 +3,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -28,7 +28,6 @@ async def create_person(
     current_user: User = Depends(get_current_user),
 ):
     """Create a new person record."""
-    # Check phone uniqueness per user
     existing = await db.execute(
         select(Person).where(Person.user_id == current_user.id, Person.phone == payload.phone)
     )
@@ -55,11 +54,15 @@ async def list_people(
     sort_by: str = Query("created_at", regex="^(created_at|first_name|last_name|tier|influence_score|updated_at)$"),
     sort_order: str = Query("desc", regex="^(asc|desc)$"),
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(200, ge=1, le=2000),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List people with optional filtering, sorting, and pagination."""
+    """List people with optional filtering, sorting, and pagination.
+
+    Uses a single batch query to fetch last-activity dates for all people
+    at once — avoids N+1 queries that caused timeouts with large contact lists.
+    """
     query = select(Person).where(Person.user_id == current_user.id)
 
     if tier:
@@ -78,7 +81,6 @@ async def list_people(
             | (Person.phone.ilike(pattern))
         )
 
-    # Sorting
     sort_col = getattr(Person, sort_by, Person.created_at)
     if sort_order == "desc":
         query = query.order_by(sort_col.desc())
@@ -89,19 +91,27 @@ async def list_people(
     result = await db.execute(query)
     people = result.scalars().all()
 
-    # Enrich with cadence status
+    if not people:
+        return []
+
+    # ── Batch fetch last meaningful activity for ALL people in ONE query ──────
+    person_ids = [p.id for p in people]
+    act_result = await db.execute(
+        select(Activity.person_id, func.max(Activity.date).label("last_date"))
+        .where(
+            Activity.person_id.in_(person_ids),
+            Activity.is_meaningful == True,
+        )
+        .group_by(Activity.person_id)
+    )
+    last_activity_map: dict = {row.person_id: row.last_date for row in act_result}
+
+    # ── Enrich each person with cadence status ────────────────────────────────
     enriched = []
     for p in people:
-        # Get last meaningful interaction
-        act_result = await db.execute(
-            select(func.max(Activity.date))
-            .where(Activity.person_id == p.id, Activity.is_meaningful == True)
-        )
-        last_meaningful = act_result.scalar_one_or_none()
-
+        last_meaningful = last_activity_map.get(p.id)
         cadence_status, days_since = compute_cadence_status(p.tier, last_meaningful)
         window = get_cadence_window(p.tier)
-
         person_data = PersonWithCadence.model_validate(p)
         person_data.cadence_status = cadence_status.value
         person_data.days_since_last_meaningful = days_since
@@ -173,7 +183,6 @@ async def update_person(
 
     update_data = payload.model_dump(exclude_unset=True)
 
-    # If phone is being changed, check uniqueness
     if "phone" in update_data and update_data["phone"] != person.phone:
         existing = await db.execute(
             select(Person).where(

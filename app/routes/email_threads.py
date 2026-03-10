@@ -51,7 +51,7 @@ async def create_email_thread(
 async def list_email_threads(
     person_id: Optional[int] = Query(None),
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(200, ge=1, le=2000),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
