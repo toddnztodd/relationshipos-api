@@ -113,6 +113,7 @@ class Property(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     address = Column(String(500), nullable=False)
     suburb = Column(String(255), nullable=True)
+    city = Column(String(255), nullable=True)
     bedrooms = Column(Integer, nullable=True)
     bathrooms = Column(Integer, nullable=True)
     has_pool = Column(Boolean, default=False)
@@ -125,6 +126,7 @@ class Property(Base):
     house_size_sqm = Column(Float, nullable=True)
     land_value = Column(String(255), nullable=True)
     perceived_value = Column(String(255), nullable=True)
+    appraisal_stage = Column(String(100), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -201,6 +203,7 @@ class PersonRelationship(Base):
     person_a_id = Column(Integer, ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
     person_b_id = Column(Integer, ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
     relationship_type = Column(String(255), nullable=False)
+    custom_label = Column(String(255), nullable=True)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -219,6 +222,7 @@ class PropertyPerson(Base):
     property_id = Column(Integer, ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True)
     person_id = Column(Integer, ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
     role = Column(String(255), nullable=False)
+    custom_label = Column(String(255), nullable=True)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -238,7 +242,9 @@ class PersonImportantDate(Base):
     label = Column(String(255), nullable=False)
     date = Column(Date, nullable=False)
     is_recurring = Column(Boolean, default=True)
+    reminder_days_before = Column(Integer, nullable=False, default=7)
     notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # Relationships
     owner = relationship("User", foreign_keys=[owner_id])

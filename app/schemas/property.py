@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 class PropertyCreate(BaseModel):
     address: str = Field(..., max_length=500)
     suburb: Optional[str] = Field(None, max_length=255)
+    city: Optional[str] = Field(None, max_length=255)
     bedrooms: Optional[int] = Field(None, ge=0)
     bathrooms: Optional[int] = Field(None, ge=0)
     has_pool: bool = False
@@ -20,11 +21,13 @@ class PropertyCreate(BaseModel):
     house_size_sqm: Optional[float] = Field(None, ge=0)
     land_value: Optional[str] = Field(None, max_length=255)
     perceived_value: Optional[str] = Field(None, max_length=255)
+    appraisal_stage: Optional[str] = Field(None, max_length=100)
 
 
 class PropertyUpdate(BaseModel):
     address: Optional[str] = Field(None, max_length=500)
     suburb: Optional[str] = Field(None, max_length=255)
+    city: Optional[str] = Field(None, max_length=255)
     bedrooms: Optional[int] = Field(None, ge=0)
     bathrooms: Optional[int] = Field(None, ge=0)
     has_pool: Optional[bool] = None
@@ -36,6 +39,7 @@ class PropertyUpdate(BaseModel):
     house_size_sqm: Optional[float] = Field(None, ge=0)
     land_value: Optional[str] = Field(None, max_length=255)
     perceived_value: Optional[str] = Field(None, max_length=255)
+    appraisal_stage: Optional[str] = Field(None, max_length=100)
 
 
 class PropertyResponse(BaseModel):
@@ -43,6 +47,7 @@ class PropertyResponse(BaseModel):
     user_id: int
     address: str
     suburb: str | None
+    city: str | None
     bedrooms: int | None
     bathrooms: int | None
     has_pool: Optional[bool] = False
@@ -54,6 +59,7 @@ class PropertyResponse(BaseModel):
     house_size_sqm: float | None
     land_value: str | None
     perceived_value: str | None
+    appraisal_stage: str | None = None
     created_at: datetime
     updated_at: datetime
 
