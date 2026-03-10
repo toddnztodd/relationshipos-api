@@ -60,6 +60,10 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     full_name = Column(String(255), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    # Annual goals
+    gc_goal_year = Column(Float, nullable=True)           # GC target for the year
+    listings_target_year = Column(Integer, nullable=True)  # Listings target for the year
+    deals_target_year = Column(Integer, nullable=True)     # Deals target for the year
 
     # Relationships
     people = relationship("Person", back_populates="user", cascade="all, delete-orphan")
@@ -68,6 +72,7 @@ class User(Base):
     email_threads = relationship("EmailThread", back_populates="user", cascade="all, delete-orphan")
     person_properties = relationship("PersonProperty", back_populates="user", cascade="all, delete-orphan")
     door_knock_sessions = relationship("DoorKnockSession", back_populates="user", cascade="all, delete-orphan")
+    weekly_tracking = relationship("WeeklyTracking", back_populates="user", cascade="all, delete-orphan")
 
 
 class Person(Base):
@@ -329,3 +334,35 @@ class DoorKnockSession(Base):
     # Relationships
     user = relationship("User", back_populates="door_knock_sessions")
     person = relationship("Person", back_populates="door_knock_sessions")
+
+
+class WeeklyTracking(Base):
+    """Weekly BASICS activity tracking record — one row per user per week."""
+    __tablename__ = "weekly_tracking"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    week_start_date = Column(Date, nullable=False)  # always the Monday of that week
+    phone_calls_daily = Column(JSON, default=list)  # array of 7 ints [Mon, Tue, Wed, Thu, Fri, Sat, Sun]
+    connects_count = Column(Integer, default=0)
+    f2f_property_owners = Column(Integer, default=0)
+    f2f_influencers = Column(Integer, default=0)
+    calls_influencers = Column(Integer, default=0)
+    new_contacts = Column(Integer, default=0)
+    contacts_cleaned = Column(Integer, default=0)
+    thank_you_cards = Column(Integer, default=0)
+    letterbox_drops = Column(Integer, default=0)
+    review_exercise = Column(Integer, nullable=True)    # 1-10 self-review
+    review_diet = Column(Integer, nullable=True)
+    review_energy = Column(Integer, nullable=True)
+    review_enthusiasm = Column(Integer, nullable=True)
+    review_work_life = Column(Integer, nullable=True)
+    review_overall = Column(Integer, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (UniqueConstraint("user_id", "week_start_date", name="uq_weekly_tracking_user_week"),)
+
+    # Relationships
+    user = relationship("User", back_populates="weekly_tracking")

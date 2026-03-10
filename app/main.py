@@ -19,6 +19,7 @@ from app.routes.checklist import router as checklist_router
 from app.routes.checklist import top_router as checklist_top_router
 from app.routes.person_properties import router as person_properties_router
 from app.routes.door_knocks import router as door_knocks_router
+from app.routes.weekly_tracking import router as weekly_tracking_router
 
 settings = get_settings()
 
@@ -87,6 +88,9 @@ app.include_router(person_properties_router, prefix=API_PREFIX)     # /people/{i
 
 # Door knock sessions
 app.include_router(door_knocks_router, prefix=API_PREFIX)           # /door-knocks/
+
+# Weekly BASICS tracking + user annual goals
+app.include_router(weekly_tracking_router, prefix=API_PREFIX)       # /weekly-tracking/, /users/goals
 
 
 @app.get("/", tags=["Health"])
