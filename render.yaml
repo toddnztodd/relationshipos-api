@@ -16,7 +16,7 @@ services:
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
-        value: sqlite+aiosqlite:///./data/relationshipos.db
+        value: postgresql://neondb_owner:npg_HvYka2b5nPOZ@ep-autumn-sound-a7om89h2-pooler.ap-southeast-2.aws.neon.tech/neondb?sslmode=require
       - key: JWT_SECRET_KEY
         value: relateos-secret-key-2024-production
       - key: SECRET_KEY
