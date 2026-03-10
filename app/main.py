@@ -99,7 +99,7 @@ async def root():
     }
 
 
-@app.get("/health", tags=["Health"])
+@app.get("/health", tags=["Health"], methods=["GET", "HEAD"])
 async def health_check():
     return {"status": "healthy"}
 
