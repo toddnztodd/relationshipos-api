@@ -26,6 +26,7 @@ from app.schemas.dashboard import (
     RepeatAttendee,
     PersonCadenceStatus,
     CadenceSummary,
+    TierBreakdown,
     AISuggestion,
     AISuggestionsResponse,
 )
@@ -146,6 +147,7 @@ async def _build_dashboard(
             repeat_open_home_attendees=[],
             cadence_statuses=[],
             cadence_summary=CadenceSummary(),
+            tier_breakdown=TierBreakdown(),
             cached=False,
         ).model_dump()
 
@@ -176,18 +178,24 @@ async def _build_dashboard(
     green_count = 0
     amber_count = 0
     red_count = 0
+    tier_counts: dict[str, int] = {"A": 0, "B": 0, "C": 0, "D": 0}
 
     for person in all_people:
         last_m = last_meaningful_map.get(person.id)
         cadence_st, days_since = compute_cadence_status(person.tier, last_m, now)
 
-        # Count for summary
+        # Count for cadence summary
         if cadence_st == CadenceStatus.green:
             green_count += 1
         elif cadence_st == CadenceStatus.amber:
             amber_count += 1
         else:
             red_count += 1
+
+        # Count for tier breakdown
+        tier_val = person.tier.value if person.tier else "C"
+        if tier_val in tier_counts:
+            tier_counts[tier_val] += 1
 
         # Build cadence status entry (we'll limit later)
         all_cadence_statuses.append(PersonCadenceStatus(
@@ -330,6 +338,13 @@ async def _build_dashboard(
             green=green_count,
             amber=amber_count,
             red=red_count,
+        ),
+        tier_breakdown=TierBreakdown(
+            A=tier_counts["A"],
+            B=tier_counts["B"],
+            C=tier_counts["C"],
+            D=tier_counts["D"],
+            total=len(all_people),
         ),
         cached=False,
     )

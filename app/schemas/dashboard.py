@@ -79,6 +79,15 @@ class CadenceSummary(BaseModel):
     red: int = 0
 
 
+class TierBreakdown(BaseModel):
+    """Count of contacts per relationship tier."""
+    A: int = 0
+    B: int = 0
+    C: int = 0
+    D: int = 0
+    total: int = 0
+
+
 class DashboardResponse(BaseModel):
     a_tier_drifting: list[DriftingRelationship]
     due_for_contact_this_week: list[DueForContact]
@@ -86,6 +95,7 @@ class DashboardResponse(BaseModel):
     repeat_open_home_attendees: list[RepeatAttendee]
     cadence_statuses: list[PersonCadenceStatus]  # limited by ?cadence_limit (default 20)
     cadence_summary: CadenceSummary = CadenceSummary()
+    tier_breakdown: TierBreakdown = TierBreakdown()
     cached: bool = False  # True if served from cache
 
 
