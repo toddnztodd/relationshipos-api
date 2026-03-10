@@ -17,6 +17,8 @@ from app.routes.important_dates import person_router as dates_person_router
 from app.routes.important_dates import top_router as dates_top_router
 from app.routes.checklist import router as checklist_router
 from app.routes.checklist import top_router as checklist_top_router
+from app.routes.person_properties import router as person_properties_router
+from app.routes.door_knocks import router as door_knocks_router
 
 settings = get_settings()
 
@@ -78,6 +80,12 @@ app.include_router(dates_top_router, prefix=API_PREFIX)             # /dates/{id
 # Listing checklist
 app.include_router(checklist_router, prefix=API_PREFIX)             # /properties/{id}/checklist
 app.include_router(checklist_top_router, prefix=API_PREFIX)         # /checklist-items/{id}
+
+# Person properties (properties linked to a person)
+app.include_router(person_properties_router, prefix=API_PREFIX)     # /people/{id}/properties
+
+# Door knock sessions
+app.include_router(door_knocks_router, prefix=API_PREFIX)           # /door-knocks/
 
 
 @app.get("/", tags=["Health"])

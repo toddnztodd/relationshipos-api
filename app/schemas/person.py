@@ -28,6 +28,8 @@ class PersonCreate(BaseModel):
     drivers_licence_verified_date: Optional[date] = None
     aml_status: Optional[str] = Field(default="not_started", max_length=50)
     perceived_value: Optional[str] = Field(None, max_length=255)
+    buyer_interest: Optional[int] = Field(None, ge=0, le=5, description="0-5 buyer interest rating")
+    seller_likelihood: Optional[int] = Field(None, ge=0, le=5, description="0-5 seller likelihood rating")
 
 
 class PersonUpdate(BaseModel):
@@ -50,6 +52,8 @@ class PersonUpdate(BaseModel):
     drivers_licence_verified_date: Optional[date] = None
     aml_status: Optional[str] = Field(None, max_length=50)
     perceived_value: Optional[str] = Field(None, max_length=255)
+    buyer_interest: Optional[int] = Field(None, ge=0, le=5)
+    seller_likelihood: Optional[int] = Field(None, ge=0, le=5)
 
 
 class PersonResponse(BaseModel):
@@ -74,6 +78,8 @@ class PersonResponse(BaseModel):
     drivers_licence_verified_date: Optional[date] = None
     aml_status: Optional[str] = "not_started"
     perceived_value: Optional[str] = None
+    buyer_interest: Optional[int] = None
+    seller_likelihood: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 

@@ -64,6 +64,8 @@ class User(Base):
     properties = relationship("Property", back_populates="user", cascade="all, delete-orphan")
     activities = relationship("Activity", back_populates="user", cascade="all, delete-orphan")
     email_threads = relationship("EmailThread", back_populates="user", cascade="all, delete-orphan")
+    person_properties = relationship("PersonProperty", back_populates="user", cascade="all, delete-orphan")
+    door_knock_sessions = relationship("DoorKnockSession", back_populates="user", cascade="all, delete-orphan")
 
 
 class Person(Base):
@@ -94,6 +96,8 @@ class Person(Base):
     drivers_licence_verified_date = Column(Date, nullable=True)
     aml_status = Column(String(50), nullable=False, default="not_started")
     perceived_value = Column(String(255), nullable=True)
+    buyer_interest = Column(Integer, nullable=True)
+    seller_likelihood = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -104,6 +108,8 @@ class Person(Base):
     important_dates = relationship("PersonDate", back_populates="person", cascade="all, delete-orphan")
     important_dates_v2 = relationship("PersonImportantDate", back_populates="person", cascade="all, delete-orphan")
     property_links = relationship("PropertyPerson", back_populates="person", cascade="all, delete-orphan")
+    person_properties = relationship("PersonProperty", back_populates="person", cascade="all, delete-orphan")
+    door_knock_sessions = relationship("DoorKnockSession", back_populates="person")
 
 
 class Property(Base):
@@ -270,3 +276,41 @@ class ListingChecklistItem(Base):
     # Relationships
     owner = relationship("User", foreign_keys=[owner_id])
     property = relationship("Property", back_populates="checklist_items")
+
+
+class PersonProperty(Base):
+    """Properties linked to a person (e.g. properties they've viewed, are interested in, own)."""
+    __tablename__ = "person_properties"
+
+    id = Column(Integer, primary_key=True, index=True)
+    person_id = Column(Integer, ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    address = Column(Text, nullable=False)
+    relationship_type = Column(Text, nullable=False, default="Viewed")
+    notes = Column(Text, nullable=True)
+    interest_level = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Relationships
+    person = relationship("Person", back_populates="person_properties")
+    user = relationship("User", back_populates="person_properties")
+
+
+class DoorKnockSession(Base):
+    """Records of door knock sessions."""
+    __tablename__ = "door_knock_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    person_id = Column(Integer, ForeignKey("people.id", ondelete="SET NULL"), nullable=True, index=True)
+    address = Column(Text, nullable=False)
+    relationship_type = Column(Text, nullable=True)
+    interest_level = Column(Integer, nullable=True)
+    notes = Column(Text, nullable=True)
+    follow_up_date = Column(Date, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Relationships
+    user = relationship("User", back_populates="door_knock_sessions")
+    person = relationship("Person", back_populates="door_knock_sessions")
