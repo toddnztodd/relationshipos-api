@@ -1,10 +1,9 @@
 """Dashboard aggregation, Open Home Kiosk, and AI suggestion endpoints."""
 
 from datetime import datetime, timedelta, timezone
-from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, func, and_, or_
+from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -119,7 +118,7 @@ async def open_home_checkin(
     )
 
 
-# ── Dashboard Aggregation ─────────────────────────────────────────────────────
+# ── Dashboard Aggregation (OPTIMISED — batch queries) ───────────────────────
 
 
 @router.get("/dashboard", response_model=DashboardResponse, tags=["Dashboard"])
@@ -134,34 +133,70 @@ async def get_dashboard(
     - Open home attendees needing callbacks (attended in last 7 days, no callback logged)
     - Repeat open home attendees
     - Cadence status (green/amber/red) for each person
+
+    Optimised: uses batch SQL queries instead of per-person queries.
     """
     now = datetime.now(timezone.utc)
+    uid = current_user.id
 
-    # ── Fetch all people for this user ──
+    # ── QUERY 1: Fetch all people for this user (single query) ──
     people_result = await db.execute(
-        select(Person).where(Person.user_id == current_user.id)
+        select(Person).where(Person.user_id == uid)
     )
     all_people = people_result.scalars().all()
 
-    # ── Pre-compute last meaningful interaction for each person ──
-    last_meaningful_map: dict[int, datetime | None] = {}
-    for person in all_people:
-        act_result = await db.execute(
-            select(func.max(Activity.date)).where(
-                Activity.person_id == person.id,
-                Activity.is_meaningful == True,
-            )
+    if not all_people:
+        return DashboardResponse(
+            a_tier_drifting=[],
+            due_for_contact_this_week=[],
+            open_home_callbacks_needed=[],
+            repeat_open_home_attendees=[],
+            cadence_statuses=[],
         )
-        last_meaningful_map[person.id] = act_result.scalar_one_or_none()
 
-    # ── 1. A-tier drifting relationships ──
+    # Build a lookup dict for fast access
+    people_by_id = {p.id: p for p in all_people}
+    person_ids = list(people_by_id.keys())
+
+    # ── QUERY 2: Batch fetch last meaningful interaction date per person ──
+    last_meaningful_result = await db.execute(
+        select(
+            Activity.person_id,
+            func.max(Activity.date).label("last_date"),
+        )
+        .where(
+            Activity.user_id == uid,
+            Activity.is_meaningful == True,
+            Activity.person_id.in_(person_ids),
+        )
+        .group_by(Activity.person_id)
+    )
+    last_meaningful_map: dict[int, datetime | None] = {}
+    for row in last_meaningful_result.all():
+        last_meaningful_map[row[0]] = row[1]
+
+    # ── Compute cadence for all people (in-memory, no DB calls) ──
     a_tier_drifting: list[DriftingRelationship] = []
+    due_for_contact: list[DueForContact] = []
+    cadence_statuses: list[PersonCadenceStatus] = []
+
     for person in all_people:
-        if person.tier != TierEnum.A:
-            continue
         last_m = last_meaningful_map.get(person.id)
         cadence_st, days_since = compute_cadence_status(person.tier, last_m, now)
-        if cadence_st == CadenceStatus.red:
+
+        # Cadence status for every person
+        cadence_statuses.append(PersonCadenceStatus(
+            person_id=person.id,
+            first_name=person.first_name,
+            last_name=person.last_name,
+            tier=person.tier.value,
+            cadence_status=cadence_st.value,
+            days_since_last_meaningful=days_since,
+            cadence_window_days=get_cadence_window(person.tier),
+        ))
+
+        # A-tier drifting
+        if person.tier == TierEnum.A and cadence_st == CadenceStatus.red:
             a_tier_drifting.append(DriftingRelationship(
                 person_id=person.id,
                 first_name=person.first_name,
@@ -172,10 +207,7 @@ async def get_dashboard(
                 cadence_window_days=get_cadence_window(person.tier),
             ))
 
-    # ── 2. People due for contact this week (approaching deadline within 7 days) ──
-    due_for_contact: list[DueForContact] = []
-    for person in all_people:
-        last_m = last_meaningful_map.get(person.id)
+        # Due for contact this week
         dtd = days_until_deadline(person.tier, last_m, now)
         if dtd is not None and 0 < dtd <= AMBER_THRESHOLD_DAYS:
             due_for_contact.append(DueForContact(
@@ -188,23 +220,22 @@ async def get_dashboard(
                 cadence_window_days=get_cadence_window(person.tier),
             ))
 
-    # ── 3. Open home attendees needing callbacks ──
+    # ── QUERY 3: Open home attendees needing callbacks (last 7 days) ──
     seven_days_ago = now - timedelta(days=7)
 
-    # Get all open_home_attendance in last 7 days
     attendance_result = await db.execute(
         select(Activity).where(
-            Activity.user_id == current_user.id,
+            Activity.user_id == uid,
             Activity.interaction_type == InteractionType.open_home_attendance,
             Activity.date >= seven_days_ago,
         )
     )
     recent_attendances = attendance_result.scalars().all()
 
-    # Get all open_home_callback person_ids in last 7 days
+    # QUERY 4: Callback person_ids in last 7 days
     callback_result = await db.execute(
         select(Activity.person_id).where(
-            Activity.user_id == current_user.id,
+            Activity.user_id == uid,
             Activity.interaction_type == InteractionType.open_home_callback,
             Activity.date >= seven_days_ago,
         )
@@ -212,12 +243,11 @@ async def get_dashboard(
     callback_person_ids = set(row[0] for row in callback_result.all())
 
     callbacks_needed: list[OpenHomeCallback] = []
-    seen_callback_persons = set()
+    seen_callback_persons: set[int] = set()
     for att in recent_attendances:
         if att.person_id not in callback_person_ids and att.person_id not in seen_callback_persons:
             seen_callback_persons.add(att.person_id)
-            # Find person info
-            person = next((p for p in all_people if p.id == att.person_id), None)
+            person = people_by_id.get(att.person_id)
             if person:
                 callbacks_needed.append(OpenHomeCallback(
                     person_id=person.id,
@@ -228,14 +258,14 @@ async def get_dashboard(
                     attendance_date=att.date,
                 ))
 
-    # ── 4. Repeat open home attendees ──
+    # ── QUERY 5: Repeat open home attendees (batch — single query) ──
     repeat_result = await db.execute(
         select(
             Activity.person_id,
             func.count(Activity.id).label("cnt"),
         )
         .where(
-            Activity.user_id == current_user.id,
+            Activity.user_id == uid,
             Activity.interaction_type == InteractionType.open_home_attendance,
         )
         .group_by(Activity.person_id)
@@ -244,44 +274,39 @@ async def get_dashboard(
     repeat_rows = repeat_result.all()
 
     repeat_attendees: list[RepeatAttendee] = []
-    for row in repeat_rows:
-        person_id, count = row[0], row[1]
-        person = next((p for p in all_people if p.id == person_id), None)
-        if person:
-            # Get distinct property IDs visited
-            props_result = await db.execute(
-                select(Activity.property_id)
-                .where(
-                    Activity.person_id == person_id,
-                    Activity.interaction_type == InteractionType.open_home_attendance,
-                    Activity.property_id.isnot(None),
-                )
-                .distinct()
-            )
-            property_ids = [r[0] for r in props_result.all()]
-            repeat_attendees.append(RepeatAttendee(
-                person_id=person.id,
-                first_name=person.first_name,
-                last_name=person.last_name,
-                phone=person.phone,
-                attendance_count=count,
-                properties_visited=property_ids,
-            ))
+    if repeat_rows:
+        repeat_person_ids = [row[0] for row in repeat_rows]
+        repeat_count_map = {row[0]: row[1] for row in repeat_rows}
 
-    # ── 5. Cadence status for all people ──
-    cadence_statuses: list[PersonCadenceStatus] = []
-    for person in all_people:
-        last_m = last_meaningful_map.get(person.id)
-        cadence_st, days_since = compute_cadence_status(person.tier, last_m, now)
-        cadence_statuses.append(PersonCadenceStatus(
-            person_id=person.id,
-            first_name=person.first_name,
-            last_name=person.last_name,
-            tier=person.tier.value,
-            cadence_status=cadence_st.value,
-            days_since_last_meaningful=days_since,
-            cadence_window_days=get_cadence_window(person.tier),
-        ))
+        # QUERY 6: Batch fetch distinct property_ids per repeat attendee
+        props_result = await db.execute(
+            select(
+                Activity.person_id,
+                Activity.property_id,
+            )
+            .where(
+                Activity.person_id.in_(repeat_person_ids),
+                Activity.interaction_type == InteractionType.open_home_attendance,
+                Activity.property_id.isnot(None),
+            )
+            .distinct()
+        )
+        # Build person_id → [property_ids] map
+        person_props_map: dict[int, list[int]] = {}
+        for row in props_result.all():
+            person_props_map.setdefault(row[0], []).append(row[1])
+
+        for pid in repeat_person_ids:
+            person = people_by_id.get(pid)
+            if person:
+                repeat_attendees.append(RepeatAttendee(
+                    person_id=person.id,
+                    first_name=person.first_name,
+                    last_name=person.last_name,
+                    phone=person.phone,
+                    attendance_count=repeat_count_map[pid],
+                    properties_visited=person_props_map.get(pid, []),
+                ))
 
     return DashboardResponse(
         a_tier_drifting=a_tier_drifting,
@@ -307,7 +332,7 @@ async def get_dashboard_summary(
     return await get_dashboard(db=db, current_user=current_user)
 
 
-# ── AI Suggestions (Stub) ─────────────────────────────────────────────────────
+# ── AI Suggestions (Stub) ────────────────────────────────────────────────────
 
 
 @router.get("/ai/suggestions", response_model=AISuggestionsResponse, tags=["AI Intelligence"])

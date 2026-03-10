@@ -38,6 +38,7 @@ app = FastAPI(
         "People are the central object — the system builds memory, structure and intelligence."
     ),
     lifespan=lifespan,
+    redirect_slashes=False,
 )
 
 # CORS
