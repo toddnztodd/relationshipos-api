@@ -12,6 +12,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    JSON,
     String,
     Text,
     Time,
@@ -83,6 +84,7 @@ class Person(Base):
     email = Column(String(255), nullable=True)
     suburb = Column(String(255), nullable=True)
     relationship_type = Column(String(100), nullable=True)
+    relationship_types = Column(JSON, nullable=True, default=list)  # multi-select array
     influence_score = Column(Float, nullable=True, default=0.0)
     tier = Column(Enum(TierEnum), nullable=False, default=TierEnum.C)
     lead_source = Column(String(255), nullable=True)

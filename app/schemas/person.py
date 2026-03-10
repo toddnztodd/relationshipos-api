@@ -15,6 +15,10 @@ class PersonCreate(BaseModel):
     email: Optional[str] = Field(None, max_length=255)
     suburb: Optional[str] = Field(None, max_length=255)
     relationship_type: Optional[str] = Field(None, max_length=100, examples=["buyer", "seller", "investor"])
+    relationship_types: Optional[list[str]] = Field(
+        default=None,
+        description="Multi-select relationship types. Values: buyer, seller, investor, landlord, tenant, developer, other",
+    )
     influence_score: Optional[float] = Field(0.0, ge=0)
     tier: TierEnum = Field(default=TierEnum.C)
     lead_source: Optional[str] = Field(None, max_length=255)
@@ -40,6 +44,10 @@ class PersonUpdate(BaseModel):
     email: Optional[str] = Field(None, max_length=255)
     suburb: Optional[str] = Field(None, max_length=255)
     relationship_type: Optional[str] = Field(None, max_length=100)
+    relationship_types: Optional[list[str]] = Field(
+        default=None,
+        description="Multi-select relationship types. Values: buyer, seller, investor, landlord, tenant, developer, other",
+    )
     influence_score: Optional[float] = Field(None, ge=0)
     tier: Optional[TierEnum] = None
     lead_source: Optional[str] = Field(None, max_length=255)
@@ -67,6 +75,7 @@ class PersonResponse(BaseModel):
     email: Optional[str] = None
     suburb: Optional[str] = None
     relationship_type: Optional[str] = None
+    relationship_types: Optional[list[str]] = None
     influence_score: Optional[float] = None
     tier: TierEnum
     lead_source: Optional[str] = None
