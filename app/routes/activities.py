@@ -16,6 +16,7 @@ from app.schemas.activity import (
     ActivityResponse,
 )
 from app.services.auth import get_current_user
+from app.services import dashboard_cache
 
 router = APIRouter(prefix="/activities", tags=["Activities"])
 
@@ -63,6 +64,7 @@ async def create_activity(
     db.add(activity)
     await db.flush()
     await db.refresh(activity)
+    dashboard_cache.invalidate(current_user.id)
     return activity
 
 
@@ -86,6 +88,7 @@ async def quick_log_activity(
     db.add(activity)
     await db.flush()
     await db.refresh(activity)
+    dashboard_cache.invalidate(current_user.id)
     return activity
 
 
@@ -160,6 +163,7 @@ async def update_activity(
 
     await db.flush()
     await db.refresh(activity)
+    dashboard_cache.invalidate(current_user.id)
     return activity
 
 
@@ -179,3 +183,4 @@ async def delete_activity(
 
     await db.delete(activity)
     await db.flush()
+    dashboard_cache.invalidate(current_user.id)

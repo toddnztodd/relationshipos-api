@@ -2,8 +2,8 @@
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, func, and_
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -25,6 +25,7 @@ from app.schemas.dashboard import (
     OpenHomeCallback,
     RepeatAttendee,
     PersonCadenceStatus,
+    CadenceSummary,
     AISuggestion,
     AISuggestionsResponse,
 )
@@ -35,6 +36,7 @@ from app.services.cadence import (
     days_until_deadline,
     AMBER_THRESHOLD_DAYS,
 )
+from app.services import dashboard_cache
 
 router = APIRouter(tags=["Dashboard & Kiosk"])
 
@@ -58,7 +60,6 @@ async def open_home_checkin(
 
     Accepts phone + name + property_id. Finds or creates the person,
     then auto-creates an open_home_attendance activity linked to the property.
-    Designed to complete in < 5 seconds.
     """
     # Validate property
     prop_result = await db.execute(
@@ -89,7 +90,6 @@ async def open_home_checkin(
         await db.refresh(person)
         is_new = True
     else:
-        # Update name if provided and person had empty fields
         if payload.first_name and not person.first_name:
             person.first_name = payload.first_name
         if payload.last_name and not person.last_name:
@@ -110,6 +110,9 @@ async def open_home_checkin(
     await db.flush()
     await db.refresh(activity)
 
+    # Invalidate dashboard cache for this user
+    dashboard_cache.invalidate(current_user.id)
+
     return OpenHomeCheckinResponse(
         person_id=person.id,
         activity_id=activity.id,
@@ -118,28 +121,18 @@ async def open_home_checkin(
     )
 
 
-# ── Dashboard Aggregation (OPTIMISED — batch queries) ───────────────────────
+# ── Dashboard Aggregation (OPTIMISED — batch queries + TTL cache) ────────────
 
 
-@router.get("/dashboard", response_model=DashboardResponse, tags=["Dashboard"])
-async def get_dashboard(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """
-    Main execution dashboard. Returns aggregated intelligence:
-    - A-tier drifting relationships (no meaningful interaction in 30+ days)
-    - People due for contact this week (approaching cadence deadline within 7 days)
-    - Open home attendees needing callbacks (attended in last 7 days, no callback logged)
-    - Repeat open home attendees
-    - Cadence status (green/amber/red) for each person
-
-    Optimised: uses batch SQL queries instead of per-person queries.
-    """
+async def _build_dashboard(
+    uid: int,
+    db: AsyncSession,
+    cadence_limit: int,
+) -> dict:
+    """Build the full dashboard response from database queries."""
     now = datetime.now(timezone.utc)
-    uid = current_user.id
 
-    # ── QUERY 1: Fetch all people for this user (single query) ──
+    # ── QUERY 1: Fetch all people for this user ──
     people_result = await db.execute(
         select(Person).where(Person.user_id == uid)
     )
@@ -152,13 +145,14 @@ async def get_dashboard(
             open_home_callbacks_needed=[],
             repeat_open_home_attendees=[],
             cadence_statuses=[],
-        )
+            cadence_summary=CadenceSummary(),
+            cached=False,
+        ).model_dump()
 
-    # Build a lookup dict for fast access
     people_by_id = {p.id: p for p in all_people}
     person_ids = list(people_by_id.keys())
 
-    # ── QUERY 2: Batch fetch last meaningful interaction date per person ──
+    # ── QUERY 2: Batch last meaningful interaction per person ──
     last_meaningful_result = await db.execute(
         select(
             Activity.person_id,
@@ -175,17 +169,28 @@ async def get_dashboard(
     for row in last_meaningful_result.all():
         last_meaningful_map[row[0]] = row[1]
 
-    # ── Compute cadence for all people (in-memory, no DB calls) ──
+    # ── Compute cadence for all people (in-memory) ──
     a_tier_drifting: list[DriftingRelationship] = []
     due_for_contact: list[DueForContact] = []
-    cadence_statuses: list[PersonCadenceStatus] = []
+    all_cadence_statuses: list[PersonCadenceStatus] = []
+    green_count = 0
+    amber_count = 0
+    red_count = 0
 
     for person in all_people:
         last_m = last_meaningful_map.get(person.id)
         cadence_st, days_since = compute_cadence_status(person.tier, last_m, now)
 
-        # Cadence status for every person
-        cadence_statuses.append(PersonCadenceStatus(
+        # Count for summary
+        if cadence_st == CadenceStatus.green:
+            green_count += 1
+        elif cadence_st == CadenceStatus.amber:
+            amber_count += 1
+        else:
+            red_count += 1
+
+        # Build cadence status entry (we'll limit later)
+        all_cadence_statuses.append(PersonCadenceStatus(
             person_id=person.id,
             first_name=person.first_name,
             last_name=person.last_name,
@@ -220,7 +225,14 @@ async def get_dashboard(
                 cadence_window_days=get_cadence_window(person.tier),
             ))
 
-    # ── QUERY 3: Open home attendees needing callbacks (last 7 days) ──
+    # Sort cadence statuses: red first, then amber, then green — most urgent on top
+    status_order = {"red": 0, "amber": 1, "green": 2}
+    all_cadence_statuses.sort(key=lambda x: (status_order.get(x.cadence_status, 3), -(x.days_since_last_meaningful or 0)))
+
+    # Limit cadence_statuses to requested amount
+    limited_cadence = all_cadence_statuses[:cadence_limit]
+
+    # ── QUERY 3: Open home callbacks needed (last 7 days) ──
     seven_days_ago = now - timedelta(days=7)
 
     attendance_result = await db.execute(
@@ -258,7 +270,7 @@ async def get_dashboard(
                     attendance_date=att.date,
                 ))
 
-    # ── QUERY 5: Repeat open home attendees (batch — single query) ──
+    # ── QUERY 5: Repeat open home attendees ──
     repeat_result = await db.execute(
         select(
             Activity.person_id,
@@ -278,7 +290,7 @@ async def get_dashboard(
         repeat_person_ids = [row[0] for row in repeat_rows]
         repeat_count_map = {row[0]: row[1] for row in repeat_rows}
 
-        # QUERY 6: Batch fetch distinct property_ids per repeat attendee
+        # QUERY 6: Batch distinct property_ids per repeat attendee
         props_result = await db.execute(
             select(
                 Activity.person_id,
@@ -291,7 +303,6 @@ async def get_dashboard(
             )
             .distinct()
         )
-        # Build person_id → [property_ids] map
         person_props_map: dict[int, list[int]] = {}
         for row in props_result.all():
             person_props_map.setdefault(row[0], []).append(row[1])
@@ -308,20 +319,64 @@ async def get_dashboard(
                     properties_visited=person_props_map.get(pid, []),
                 ))
 
-    return DashboardResponse(
+    response = DashboardResponse(
         a_tier_drifting=a_tier_drifting,
         due_for_contact_this_week=due_for_contact,
         open_home_callbacks_needed=callbacks_needed,
         repeat_open_home_attendees=repeat_attendees,
-        cadence_statuses=cadence_statuses,
+        cadence_statuses=limited_cadence,
+        cadence_summary=CadenceSummary(
+            total_people=len(all_people),
+            green=green_count,
+            amber=amber_count,
+            red=red_count,
+        ),
+        cached=False,
     )
+    return response.model_dump()
 
 
-# ── Dashboard Summary Alias (frontend compatibility) ─────────────────────────
+@router.get("/dashboard", response_model=DashboardResponse, tags=["Dashboard"])
+async def get_dashboard(
+    cadence_limit: int = Query(20, ge=1, le=2000, description="Max cadence statuses to return (default 20)"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Main execution dashboard with per-user 5-minute TTL cache.
+
+    Returns aggregated intelligence:
+    - A-tier drifting relationships
+    - People due for contact this week
+    - Open home attendees needing callbacks
+    - Repeat open home attendees
+    - Top N cadence statuses (sorted by urgency)
+    - Summary counts (total, green, amber, red)
+    """
+    # Check cache first
+    cached = dashboard_cache.get(current_user.id)
+    if cached is not None:
+        # Return cached data but override cadence_limit
+        result = dict(cached)
+        result["cached"] = True
+        # Re-slice cadence_statuses to respect the requested limit
+        result["cadence_statuses"] = result.get("_all_cadence_statuses", result["cadence_statuses"])[:cadence_limit]
+        return result
+
+    # Build fresh dashboard
+    data = await _build_dashboard(current_user.id, db, cadence_limit)
+
+    # Store in cache — keep full cadence list for re-slicing on cache hits
+    cache_data = dict(data)
+    cache_data["_all_cadence_statuses"] = data["cadence_statuses"]
+    dashboard_cache.put(current_user.id, cache_data)
+
+    return data
 
 
 @router.get("/dashboard/summary", response_model=DashboardResponse, tags=["Dashboard"])
 async def get_dashboard_summary(
+    cadence_limit: int = Query(20, ge=1, le=2000, description="Max cadence statuses to return (default 20)"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -329,7 +384,7 @@ async def get_dashboard_summary(
     Alias for /dashboard — the frontend calls this path.
     Returns the same aggregated dashboard data.
     """
-    return await get_dashboard(db=db, current_user=current_user)
+    return await get_dashboard(cadence_limit=cadence_limit, db=db, current_user=current_user)
 
 
 # ── AI Suggestions (Stub) ────────────────────────────────────────────────────
@@ -342,11 +397,7 @@ async def get_ai_suggestions(
 ):
     """
     AI Intelligence Layer — stub endpoint returning mock suggestions.
-
-    In production, this would analyse interaction patterns, email threads,
-    and behavioural signals to surface actionable insights.
     """
-    # Fetch a few people to make mock suggestions more realistic
     result = await db.execute(
         select(Person)
         .where(Person.user_id == current_user.id)

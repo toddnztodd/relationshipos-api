@@ -71,12 +71,22 @@ class PersonCadenceStatus(BaseModel):
     cadence_window_days: int
 
 
+class CadenceSummary(BaseModel):
+    """Aggregate counts of cadence statuses across all contacts."""
+    total_people: int = 0
+    green: int = 0
+    amber: int = 0
+    red: int = 0
+
+
 class DashboardResponse(BaseModel):
     a_tier_drifting: list[DriftingRelationship]
     due_for_contact_this_week: list[DueForContact]
     open_home_callbacks_needed: list[OpenHomeCallback]
     repeat_open_home_attendees: list[RepeatAttendee]
-    cadence_statuses: list[PersonCadenceStatus]
+    cadence_statuses: list[PersonCadenceStatus]  # limited by ?cadence_limit (default 20)
+    cadence_summary: CadenceSummary = CadenceSummary()
+    cached: bool = False  # True if served from cache
 
 
 class AISuggestion(BaseModel):

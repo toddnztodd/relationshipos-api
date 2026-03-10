@@ -17,6 +17,7 @@ from app.schemas.person import (
 )
 from app.services.auth import get_current_user
 from app.services.cadence import compute_cadence_status, get_cadence_window
+from app.services import dashboard_cache
 
 router = APIRouter(prefix="/people", tags=["People"])
 
@@ -41,6 +42,7 @@ async def create_person(
     db.add(person)
     await db.flush()
     await db.refresh(person)
+    dashboard_cache.invalidate(current_user.id)
     return person
 
 
@@ -202,6 +204,7 @@ async def update_person(
 
     await db.flush()
     await db.refresh(person)
+    dashboard_cache.invalidate(current_user.id)
     return person
 
 
@@ -221,3 +224,4 @@ async def delete_person(
 
     await db.delete(person)
     await db.flush()
+    dashboard_cache.invalidate(current_user.id)
