@@ -1,6 +1,6 @@
 """Pydantic schemas for Person (People Engine)."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -22,6 +22,12 @@ class PersonCreate(BaseModel):
     notes: Optional[str] = None
     is_relationship_asset: bool = False
     email_sync_enabled: bool = False
+    drivers_licence_number: Optional[str] = Field(None, max_length=100)
+    drivers_licence_expiry: Optional[date] = None
+    drivers_licence_verified: bool = False
+    drivers_licence_verified_date: Optional[date] = None
+    aml_status: str = Field(default="not_started", max_length=50)
+    perceived_value: Optional[str] = Field(None, max_length=255)
 
 
 class PersonUpdate(BaseModel):
@@ -38,6 +44,12 @@ class PersonUpdate(BaseModel):
     notes: Optional[str] = None
     is_relationship_asset: Optional[bool] = None
     email_sync_enabled: Optional[bool] = None
+    drivers_licence_number: Optional[str] = Field(None, max_length=100)
+    drivers_licence_expiry: Optional[date] = None
+    drivers_licence_verified: Optional[bool] = None
+    drivers_licence_verified_date: Optional[date] = None
+    aml_status: Optional[str] = Field(None, max_length=50)
+    perceived_value: Optional[str] = Field(None, max_length=255)
 
 
 class PersonResponse(BaseModel):
@@ -56,6 +68,12 @@ class PersonResponse(BaseModel):
     notes: str | None
     is_relationship_asset: bool
     email_sync_enabled: bool
+    drivers_licence_number: str | None
+    drivers_licence_expiry: date | None
+    drivers_licence_verified: bool
+    drivers_licence_verified_date: date | None
+    aml_status: str
+    perceived_value: str | None
     created_at: datetime
     updated_at: datetime
 

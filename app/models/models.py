@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy import (
     Boolean,
     Column,
+    Date,
     DateTime,
     Enum,
     Float,
@@ -86,6 +87,13 @@ class Person(Base):
     notes = Column(Text, nullable=True)
     is_relationship_asset = Column(Boolean, default=False)
     email_sync_enabled = Column(Boolean, default=False)
+    # New AML / licence fields
+    drivers_licence_number = Column(String(100), nullable=True)
+    drivers_licence_expiry = Column(Date, nullable=True)
+    drivers_licence_verified = Column(Boolean, default=False)
+    drivers_licence_verified_date = Column(Date, nullable=True)
+    aml_status = Column(String(50), nullable=False, default="not_started")
+    perceived_value = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -94,6 +102,8 @@ class Person(Base):
     activities = relationship("Activity", back_populates="person", cascade="all, delete-orphan")
     email_threads = relationship("EmailThread", back_populates="person", cascade="all, delete-orphan")
     important_dates = relationship("PersonDate", back_populates="person", cascade="all, delete-orphan")
+    important_dates_v2 = relationship("PersonImportantDate", back_populates="person", cascade="all, delete-orphan")
+    property_links = relationship("PropertyPerson", back_populates="person", cascade="all, delete-orphan")
 
 
 class Property(Base):
@@ -109,12 +119,20 @@ class Property(Base):
     renovation_status = Column(String(255), nullable=True)
     years_owned = Column(Float, nullable=True)
     council_valuation = Column(Float, nullable=True)
+    # New property fields
+    garaging = Column(String(255), nullable=True)
+    section_size_sqm = Column(Float, nullable=True)
+    house_size_sqm = Column(Float, nullable=True)
+    land_value = Column(String(255), nullable=True)
+    perceived_value = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     # Relationships
     user = relationship("User", back_populates="properties")
     activities = relationship("Activity", back_populates="property", cascade="all, delete-orphan")
+    person_links = relationship("PropertyPerson", back_populates="property", cascade="all, delete-orphan")
+    checklist_items = relationship("ListingChecklistItem", back_populates="property", cascade="all, delete-orphan")
 
 
 class Activity(Base):
@@ -155,17 +173,94 @@ class EmailThread(Base):
 
 
 class PersonDate(Base):
-    """Important dates associated with a person (birthdays, anniversaries, custom)."""
+    """Important dates associated with a person (birthdays, anniversaries, custom) — v1 MM-DD format."""
     __tablename__ = "person_dates"
 
     id = Column(Integer, primary_key=True, index=True)
     person_id = Column(Integer, ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
-    label = Column(String(255), nullable=False, doc="e.g. 'Birthday', 'Anniversary', or custom text")
-    date = Column(String(5), nullable=False, doc="Month and day stored as MM-DD, e.g. '03-25'")
-    year = Column(Integer, nullable=True, doc="Optional year the event occurred or will occur")
+    label = Column(String(255), nullable=False)
+    date = Column(String(5), nullable=False, doc="Month and day stored as MM-DD")
+    year = Column(Integer, nullable=True)
     reminder_days_before = Column(Integer, nullable=False, default=7)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # Relationships
     person = relationship("Person", back_populates="important_dates")
+
+
+# ── NEW TABLES ─────────────────────────────────────────────────────────────────
+
+
+class PersonRelationship(Base):
+    """Tracks relationships between two people (e.g. Spouse, Sibling, Referred By)."""
+    __tablename__ = "person_relationships"
+
+    id = Column(Integer, primary_key=True, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    person_a_id = Column(Integer, ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
+    person_b_id = Column(Integer, ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
+    relationship_type = Column(String(255), nullable=False)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Relationships
+    owner = relationship("User", foreign_keys=[owner_id])
+    person_a = relationship("Person", foreign_keys=[person_a_id])
+    person_b = relationship("Person", foreign_keys=[person_b_id])
+
+
+class PropertyPerson(Base):
+    """Links a person to a property with a role (Vendor, Buyer Enquiry, etc.)."""
+    __tablename__ = "property_people"
+
+    id = Column(Integer, primary_key=True, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    property_id = Column(Integer, ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True)
+    person_id = Column(Integer, ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
+    role = Column(String(255), nullable=False)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Relationships
+    owner = relationship("User", foreign_keys=[owner_id])
+    property = relationship("Property", back_populates="person_links")
+    person = relationship("Person", back_populates="property_links")
+
+
+class PersonImportantDate(Base):
+    """Important dates v2 — stores full date, supports recurring flag."""
+    __tablename__ = "person_important_dates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    person_id = Column(Integer, ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
+    label = Column(String(255), nullable=False)
+    date = Column(Date, nullable=False)
+    is_recurring = Column(Boolean, default=True)
+    notes = Column(Text, nullable=True)
+
+    # Relationships
+    owner = relationship("User", foreign_keys=[owner_id])
+    person = relationship("Person", back_populates="important_dates_v2")
+
+
+class ListingChecklistItem(Base):
+    """Checklist items for a property listing workflow."""
+    __tablename__ = "listing_checklist_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    property_id = Column(Integer, ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True)
+    phase = Column(String(255), nullable=False)
+    step_name = Column(String(500), nullable=False)
+    is_completed = Column(Boolean, default=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    due_date = Column(Date, nullable=True)
+    notes = Column(Text, nullable=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+    sale_method = Column(String(100), nullable=True)
+
+    # Relationships
+    owner = relationship("User", foreign_keys=[owner_id])
+    property = relationship("Property", back_populates="checklist_items")

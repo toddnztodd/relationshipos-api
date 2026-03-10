@@ -9,6 +9,10 @@ from app.config import get_settings
 from app.database import init_db
 from app.routes import auth, people, properties, activities, email_threads, dashboard
 from app.routes.person_dates import person_dates_router, dates_router
+from app.routes.person_relationships import router as person_relationships_router
+from app.routes.property_people import router as property_people_router
+from app.routes.important_dates import router as important_dates_router
+from app.routes.checklist import router as checklist_router
 
 settings = get_settings()
 
@@ -51,6 +55,11 @@ app.include_router(email_threads.router, prefix=API_PREFIX)
 app.include_router(dashboard.router, prefix=API_PREFIX)
 app.include_router(person_dates_router, prefix=API_PREFIX)
 app.include_router(dates_router, prefix=API_PREFIX)
+# New feature routers
+app.include_router(person_relationships_router, prefix=API_PREFIX)
+app.include_router(property_people_router, prefix=API_PREFIX)
+app.include_router(important_dates_router, prefix=API_PREFIX)
+app.include_router(checklist_router, prefix=API_PREFIX)
 
 
 @app.get("/", tags=["Health"])
