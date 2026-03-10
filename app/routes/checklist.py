@@ -1,4 +1,4 @@
-"""Listing Checklist CRUD routes."""
+"""Listing Checklist CRUD routes — nested and top-level."""
 
 from datetime import datetime, timezone
 
@@ -11,7 +11,14 @@ from app.models.models import User, Property, ListingChecklistItem
 from app.schemas.checklist import ChecklistItemCreate, ChecklistItemUpdate, ChecklistItemResponse
 from app.services.auth import get_current_user
 
+# Nested router: /api/v1/properties/{property_id}/checklist
 router = APIRouter(prefix="/properties", tags=["Listing Checklist"])
+
+# Top-level router: /api/v1/checklist-items
+top_router = APIRouter(prefix="/checklist-items", tags=["Listing Checklist"])
+
+
+# ── Nested endpoints ──────────────────────────────────────────────────────────
 
 
 @router.get("/{property_id}/checklist", response_model=list[ChecklistItemResponse])
@@ -21,10 +28,10 @@ async def list_checklist(
     current_user: User = Depends(get_current_user),
 ):
     """Get all checklist items for a property, ordered by sort_order."""
-    prop = await db.execute(
+    prop = (await db.execute(
         select(Property).where(Property.id == property_id, Property.user_id == current_user.id)
-    )
-    if not prop.scalar_one_or_none():
+    )).scalar_one_or_none()
+    if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
 
     result = await db.execute(
@@ -44,10 +51,10 @@ async def create_checklist_items(
     current_user: User = Depends(get_current_user),
 ):
     """Create one or more checklist items for a property (accepts array)."""
-    prop = await db.execute(
+    prop = (await db.execute(
         select(Property).where(Property.id == property_id, Property.user_id == current_user.id)
-    )
-    if not prop.scalar_one_or_none():
+    )).scalar_one_or_none()
+    if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
 
     items = []
@@ -96,7 +103,6 @@ async def update_checklist_item(
 
     update_data = payload.model_dump(exclude_unset=True)
 
-    # Auto-set completed_at when toggling is_completed
     if "is_completed" in update_data:
         if update_data["is_completed"] and not item.is_completed:
             update_data["completed_at"] = datetime.now(timezone.utc)
@@ -140,10 +146,10 @@ async def clear_checklist(
     current_user: User = Depends(get_current_user),
 ):
     """Clear all checklist items for a property."""
-    prop = await db.execute(
+    prop = (await db.execute(
         select(Property).where(Property.id == property_id, Property.user_id == current_user.id)
-    )
-    if not prop.scalar_one_or_none():
+    )).scalar_one_or_none()
+    if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
 
     result = await db.execute(
@@ -152,7 +158,43 @@ async def clear_checklist(
             ListingChecklistItem.owner_id == current_user.id,
         )
     )
-    items = result.scalars().all()
-    for item in items:
+    for item in result.scalars().all():
         await db.delete(item)
     await db.flush()
+
+
+# ── Top-level endpoints ──────────────────────────────────────────────────────
+
+
+@top_router.patch("/{item_id}", response_model=ChecklistItemResponse)
+async def update_checklist_item_toplevel(
+    item_id: int,
+    payload: ChecklistItemUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Update a checklist item by ID (top-level)."""
+    result = await db.execute(
+        select(ListingChecklistItem).where(
+            ListingChecklistItem.id == item_id,
+            ListingChecklistItem.owner_id == current_user.id,
+        )
+    )
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Checklist item not found")
+
+    update_data = payload.model_dump(exclude_unset=True)
+
+    if "is_completed" in update_data:
+        if update_data["is_completed"] and not item.is_completed:
+            update_data["completed_at"] = datetime.now(timezone.utc)
+        elif not update_data["is_completed"]:
+            update_data["completed_at"] = None
+
+    for key, value in update_data.items():
+        setattr(item, key, value)
+
+    await db.flush()
+    await db.refresh(item)
+    return item

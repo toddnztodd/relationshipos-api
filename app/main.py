@@ -9,10 +9,14 @@ from app.config import get_settings
 from app.database import init_db
 from app.routes import auth, people, properties, activities, email_threads, dashboard
 from app.routes.person_dates import person_dates_router, dates_router
-from app.routes.person_relationships import router as person_relationships_router
+from app.routes.person_relationships import person_router as relationships_person_router
+from app.routes.person_relationships import top_router as relationships_top_router
 from app.routes.property_people import router as property_people_router
-from app.routes.important_dates import router as important_dates_router
+from app.routes.property_people import top_router as property_people_top_router
+from app.routes.important_dates import person_router as dates_person_router
+from app.routes.important_dates import top_router as dates_top_router
 from app.routes.checklist import router as checklist_router
+from app.routes.checklist import top_router as checklist_top_router
 
 settings = get_settings()
 
@@ -47,19 +51,33 @@ app.add_middleware(
 
 API_PREFIX = "/api/v1"
 
+# Core CRUD
 app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(people.router, prefix=API_PREFIX)
 app.include_router(properties.router, prefix=API_PREFIX)
 app.include_router(activities.router, prefix=API_PREFIX)
 app.include_router(email_threads.router, prefix=API_PREFIX)
 app.include_router(dashboard.router, prefix=API_PREFIX)
+
+# Person dates (v1 — legacy)
 app.include_router(person_dates_router, prefix=API_PREFIX)
 app.include_router(dates_router, prefix=API_PREFIX)
-# New feature routers
-app.include_router(person_relationships_router, prefix=API_PREFIX)
-app.include_router(property_people_router, prefix=API_PREFIX)
-app.include_router(important_dates_router, prefix=API_PREFIX)
-app.include_router(checklist_router, prefix=API_PREFIX)
+
+# Relationships (Charlotte's Web)
+app.include_router(relationships_person_router, prefix=API_PREFIX)  # /people/{id}/relationships
+app.include_router(relationships_top_router, prefix=API_PREFIX)     # /relationships
+
+# Property-Person links
+app.include_router(property_people_router, prefix=API_PREFIX)       # /properties/{id}/people, /people/{id}/properties
+app.include_router(property_people_top_router, prefix=API_PREFIX)   # /property-people/{id}
+
+# Important dates (v2)
+app.include_router(dates_person_router, prefix=API_PREFIX)          # /people/{id}/important-dates, /people/{id}/dates
+app.include_router(dates_top_router, prefix=API_PREFIX)             # /dates/{id}
+
+# Listing checklist
+app.include_router(checklist_router, prefix=API_PREFIX)             # /properties/{id}/checklist
+app.include_router(checklist_top_router, prefix=API_PREFIX)         # /checklist-items/{id}
 
 
 @app.get("/", tags=["Health"])
@@ -84,12 +102,13 @@ async def debug_db():
     import os
     url = _resolve_database_url()
     env_url = os.environ.get("DATABASE_URL", "NOT SET")
-    # Mask credentials in output
+
     def mask(u: str) -> str:
         if "@" in u:
             parts = u.split("@")
             return parts[0][:15] + "...@" + parts[1]
         return u[:30] + "..."
+
     return {
         "resolved_url": mask(url),
         "env_var_set": env_url != "NOT SET",

@@ -31,6 +31,6 @@ EXPOSE ${PORT}
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health || exit 1
 
-# Start: seed database then run server
+# Start: run server (init_db in lifespan creates tables if missing, never drops)
 # The $PORT variable is respected by Render, Railway, and Fly.io
-CMD python seed_data.py && uvicorn app.main:app --host 0.0.0.0 --port ${PORT}
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT}

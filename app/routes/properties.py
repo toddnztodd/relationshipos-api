@@ -79,6 +79,30 @@ async def list_doorknock_properties(
     return result.scalars().all()
 
 
+@router.patch("/{property_id}/appraisal-stage", response_model=PropertyResponse)
+async def update_appraisal_stage(
+    property_id: int,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Update just the appraisal_stage field on a property."""
+    result = await db.execute(
+        select(Property).where(Property.id == property_id, Property.user_id == current_user.id)
+    )
+    prop = result.scalar_one_or_none()
+    if not prop:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
+
+    stage = payload.get("appraisal_stage")
+    if stage is None:
+        raise HTTPException(status_code=422, detail="appraisal_stage is required")
+    prop.appraisal_stage = stage
+    await db.flush()
+    await db.refresh(prop)
+    return prop
+
+
 @router.get("/{property_id}", response_model=PropertyResponse)
 async def get_property(
     property_id: int,

@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 class PersonRelationshipCreate(BaseModel):
     person_b_id: int = Field(..., description="ID of the related person")
     relationship_type: str = Field(..., max_length=255, examples=["Spouse", "Sibling", "Referred By", "Friend"])
+    custom_label: Optional[str] = Field(None, max_length=255)
     notes: Optional[str] = None
 
 
@@ -18,6 +19,7 @@ class PersonRelationshipResponse(BaseModel):
     person_a_id: int
     person_b_id: int
     relationship_type: str
+    custom_label: str | None = None
     notes: str | None
     created_at: datetime
     # Enriched fields for display
