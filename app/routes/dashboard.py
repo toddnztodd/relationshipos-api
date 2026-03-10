@@ -196,16 +196,20 @@ async def _build_dashboard(
             red_count += 1
 
         # needs_attention: contacts overdue by their tier cadence window
-        # A-tier: overdue if no contact in 30+ days (or never contacted)
-        # B-tier: overdue if no contact in 60+ days (or never contacted)
-        # C-tier: overdue if no contact in 90+ days (or never contacted)
+        # Reference date = max(last_activity_date, created_at) so new contacts
+        # are not immediately counted as overdue.
+        # A-tier: overdue if reference_date > 30 days ago
+        # B-tier: overdue if reference_date > 60 days ago
+        # C-tier: overdue if reference_date > 90 days ago
         window = get_cadence_window(person.tier)
+        created_aware = person.created_at if person.created_at.tzinfo else person.created_at.replace(tzinfo=timezone.utc)
         if last_m is None:
-            needs_attention_count += 1
+            reference_date = created_aware
         else:
             last_m_aware = last_m if last_m.tzinfo else last_m.replace(tzinfo=timezone.utc)
-            if (now - last_m_aware).days > window:
-                needs_attention_count += 1
+            reference_date = max(last_m_aware, created_aware)
+        if (now - reference_date).days > window:
+            needs_attention_count += 1
 
         # Count for tier breakdown
         tier_val = person.tier.value if person.tier else "C"
