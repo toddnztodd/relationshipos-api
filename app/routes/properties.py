@@ -62,6 +62,25 @@ async def list_properties(
     return result.scalars().all()
 
 
+@router.get("/appraisals", response_model=list[PropertyResponse])
+async def list_appraisals(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Return properties with appraisal_status in ('booked', 'completed') for the current user.
+    """
+    result = await db.execute(
+        select(Property)
+        .where(
+            Property.user_id == current_user.id,
+            Property.appraisal_status.in_(["booked", "completed"]),
+        )
+        .order_by(Property.created_at.desc())
+    )
+    return result.scalars().all()
+
+
 @router.get("/doorknock", response_model=list[PropertyResponse])
 async def list_doorknock_properties(
     db: AsyncSession = Depends(get_db),

@@ -97,13 +97,15 @@ async def open_home_checkin(
             person.last_name = payload.last_name
         await db.flush()
 
-    # Create open_home_attendance activity
+    # Create open_home_attendance activity with due_date = 24h from now
+    now = datetime.now(timezone.utc)
     activity = Activity(
         user_id=current_user.id,
         person_id=person.id,
         property_id=payload.property_id,
         interaction_type=InteractionType.open_home_attendance,
-        date=datetime.now(timezone.utc),
+        date=now,
+        due_date=now + timedelta(hours=24),
         notes=f"Open home check-in at {prop.address}",
         is_meaningful=True,
     )
@@ -194,12 +196,16 @@ async def _build_dashboard(
             red_count += 1
 
         # needs_attention: contacts overdue by their tier cadence window
-        # A-tier: overdue if no contact in 30+ days (or never)
-        # B-tier: overdue if no contact in 60+ days (or never)
-        # C-tier: overdue if no contact in 90+ days (or never)
+        # A-tier: overdue if no contact in 30+ days (or never contacted)
+        # B-tier: overdue if no contact in 60+ days (or never contacted)
+        # C-tier: overdue if no contact in 90+ days (or never contacted)
         window = get_cadence_window(person.tier)
-        if last_m is None or (now - (last_m if last_m.tzinfo else last_m.replace(tzinfo=timezone.utc))).days > window:
+        if last_m is None:
             needs_attention_count += 1
+        else:
+            last_m_aware = last_m if last_m.tzinfo else last_m.replace(tzinfo=timezone.utc)
+            if (now - last_m_aware).days > window:
+                needs_attention_count += 1
 
         # Count for tier breakdown
         tier_val = person.tier.value if person.tier else "C"
@@ -271,6 +277,16 @@ async def _build_dashboard(
     )
     callback_person_ids = set(row[0] for row in callback_result.all())
 
+    # Build property address lookup for callbacks
+    property_ids_needed = set(att.property_id for att in recent_attendances if att.property_id)
+    property_address_map: dict[int, str] = {}
+    if property_ids_needed:
+        props_result = await db.execute(
+            select(Property.id, Property.address).where(Property.id.in_(property_ids_needed))
+        )
+        for row in props_result.all():
+            property_address_map[row[0]] = row[1]
+
     callbacks_needed: list[OpenHomeCallback] = []
     seen_callback_persons: set[int] = set()
     for att in recent_attendances:
@@ -284,7 +300,9 @@ async def _build_dashboard(
                     last_name=person.last_name,
                     phone=person.phone,
                     property_id=att.property_id,
+                    property_address=property_address_map.get(att.property_id) if att.property_id else None,
                     attendance_date=att.date,
+                    due_date=att.due_date,
                 ))
 
     # ── QUERY 5: Repeat open home attendees ──
@@ -342,6 +360,15 @@ async def _build_dashboard(
     )
     active_listings_count = listings_result.scalar() or 0
 
+    # ── QUERY 8: Active appraisals count ──
+    appraisals_result = await db.execute(
+        select(func.count(Property.id)).where(
+            Property.user_id == uid,
+            Property.appraisal_status.in_(["booked", "completed"]),
+        )
+    )
+    active_appraisals_count = appraisals_result.scalar() or 0
+
     response = DashboardResponse(
         a_tier_drifting=a_tier_drifting,
         due_for_contact_this_week=due_for_contact,
@@ -356,13 +383,14 @@ async def _build_dashboard(
             needs_attention=needs_attention_count,
         ),
         tier_breakdown=TierBreakdown(
-            A=tier_counts["A"],
-            B=tier_counts["B"],
-            C=tier_counts["C"],
-            D=tier_counts["D"],
+            tier_a=tier_counts["A"],
+            tier_b=tier_counts["B"],
+            tier_c=tier_counts["C"],
+            tier_d=tier_counts["D"],
             total=len(all_people),
         ),
         active_listings=active_listings_count,
+        active_appraisals=active_appraisals_count,
         cached=False,
     )
     return response.model_dump()
@@ -417,73 +445,3 @@ async def get_dashboard_summary(
     Returns the same aggregated dashboard data.
     """
     return await get_dashboard(cadence_limit=cadence_limit, db=db, current_user=current_user)
-
-
-# ── AI Suggestions (Stub) ────────────────────────────────────────────────────
-
-
-@router.get("/ai/suggestions", response_model=AISuggestionsResponse, tags=["AI Intelligence"])
-async def get_ai_suggestions(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """
-    AI Intelligence Layer — stub endpoint returning mock suggestions.
-    """
-    result = await db.execute(
-        select(Person)
-        .where(Person.user_id == current_user.id)
-        .order_by(Person.influence_score.desc())
-        .limit(5)
-    )
-    top_people = result.scalars().all()
-
-    suggestions: list[AISuggestion] = []
-
-    if len(top_people) >= 1:
-        p = top_people[0]
-        suggestions.append(AISuggestion(
-            suggestion_type="tier_promotion",
-            person_id=p.id,
-            title=f"Consider promoting {p.first_name} {p.last_name or ''} to A-tier",
-            description=f"{p.first_name} has shown consistent engagement. Their interaction pattern suggests they should be elevated to A-tier for closer relationship management.",
-            confidence=0.85,
-        ))
-
-    if len(top_people) >= 2:
-        p = top_people[1]
-        suggestions.append(AISuggestion(
-            suggestion_type="call_preparation",
-            person_id=p.id,
-            title=f"Call prep summary for {p.first_name} {p.last_name or ''}",
-            description=f"Before your next call with {p.first_name}, note: they have attended multiple open homes and may be ready to make a decision. Focus on understanding their timeline.",
-            confidence=0.72,
-        ))
-
-    suggestions.append(AISuggestion(
-        suggestion_type="general_insight",
-        person_id=None,
-        title="Suburb activity trend detected",
-        description="There has been increased open home attendance from people in the Papamoa Beach area. Consider targeted outreach to your contacts in this suburb.",
-        confidence=0.68,
-    ))
-
-    suggestions.append(AISuggestion(
-        suggestion_type="email_summary",
-        person_id=top_people[0].id if top_people else None,
-        title="Email thread summary available",
-        description="You have several long email threads that could benefit from AI summarisation. Enable email sync on key relationship assets to unlock this feature.",
-        confidence=0.60,
-    ))
-
-    if len(top_people) >= 3:
-        p = top_people[2]
-        suggestions.append(AISuggestion(
-            suggestion_type="repeat_buyer_signal",
-            person_id=p.id,
-            title=f"Repeat buyer signal for {p.first_name} {p.last_name or ''}",
-            description=f"{p.first_name} has attended open homes for multiple properties. This pattern often indicates active buyer intent. Prioritise a coffee meeting.",
-            confidence=0.78,
-        ))
-
-    return AISuggestionsResponse(suggestions=suggestions)

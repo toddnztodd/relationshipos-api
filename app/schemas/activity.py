@@ -1,6 +1,6 @@
 """Pydantic schemas for Activity / Interaction Logging."""
 
-from datetime import datetime
+from datetime import date, datetime, time
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -15,6 +15,10 @@ class ActivityCreate(BaseModel):
     date: Optional[datetime] = None  # defaults to now on server
     notes: Optional[str] = None
     is_meaningful: bool = True
+    feedback: Optional[str] = None
+    price_indication: Optional[str] = Field(None, max_length=255)
+    scheduled_date: Optional[date] = None
+    scheduled_time: Optional[time] = None
 
 
 class ActivityQuickLog(BaseModel):
@@ -32,6 +36,10 @@ class ActivityUpdate(BaseModel):
     date: Optional[datetime] = None
     notes: Optional[str] = None
     is_meaningful: Optional[bool] = None
+    feedback: Optional[str] = None
+    price_indication: Optional[str] = Field(None, max_length=255)
+    scheduled_date: Optional[date] = None
+    scheduled_time: Optional[time] = None
 
 
 class ActivityResponse(BaseModel):
@@ -43,6 +51,11 @@ class ActivityResponse(BaseModel):
     date: datetime
     notes: str | None
     is_meaningful: bool
+    due_date: datetime | None = None
+    feedback: str | None = None
+    price_indication: str | None = None
+    scheduled_date: date | None = None
+    scheduled_time: time | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

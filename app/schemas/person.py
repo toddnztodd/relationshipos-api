@@ -30,6 +30,7 @@ class PersonCreate(BaseModel):
     perceived_value: Optional[str] = Field(None, max_length=255)
     buyer_interest: Optional[int] = Field(None, ge=0, le=5, description="0-5 buyer interest rating")
     seller_likelihood: Optional[int] = Field(None, ge=0, le=5, description="0-5 seller likelihood rating")
+    nickname: Optional[str] = Field(None, max_length=255)
 
 
 class PersonUpdate(BaseModel):
@@ -54,6 +55,7 @@ class PersonUpdate(BaseModel):
     perceived_value: Optional[str] = Field(None, max_length=255)
     buyer_interest: Optional[int] = Field(None, ge=0, le=5)
     seller_likelihood: Optional[int] = Field(None, ge=0, le=5)
+    nickname: Optional[str] = Field(None, max_length=255)
 
 
 class PersonResponse(BaseModel):
@@ -80,6 +82,7 @@ class PersonResponse(BaseModel):
     perceived_value: Optional[str] = None
     buyer_interest: Optional[int] = None
     seller_likelihood: Optional[int] = None
+    nickname: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

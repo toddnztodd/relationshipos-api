@@ -14,6 +14,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    Time,
     UniqueConstraint,
     func,
 )
@@ -98,6 +99,7 @@ class Person(Base):
     perceived_value = Column(String(255), nullable=True)
     buyer_interest = Column(Integer, nullable=True)
     seller_likelihood = Column(Integer, nullable=True)
+    nickname = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -133,6 +135,10 @@ class Property(Base):
     land_value = Column(String(255), nullable=True)
     perceived_value = Column(String(255), nullable=True)
     appraisal_stage = Column(String(100), nullable=True)
+    appraisal_status = Column(String(100), nullable=True)  # booked | completed | converted_to_listing | lost
+    toilets = Column(Integer, nullable=True)
+    ensuites = Column(Integer, nullable=True)
+    living_rooms = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -154,6 +160,11 @@ class Activity(Base):
     date = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     notes = Column(Text, nullable=True)
     is_meaningful = Column(Boolean, default=True)
+    due_date = Column(DateTime(timezone=True), nullable=True)
+    feedback = Column(Text, nullable=True)
+    price_indication = Column(String(255), nullable=True)
+    scheduled_date = Column(Date, nullable=True)
+    scheduled_time = Column(Time, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # Relationships

@@ -1,6 +1,6 @@
 """Pydantic schemas for Dashboard aggregation and Open Home Kiosk."""
 
-from datetime import datetime
+from datetime import date, datetime, time
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -49,7 +49,9 @@ class OpenHomeCallback(BaseModel):
     last_name: str | None
     phone: str
     property_id: int | None
+    property_address: str | None = None
     attendance_date: datetime
+    due_date: datetime | None = None
 
 
 class RepeatAttendee(BaseModel):
@@ -81,11 +83,11 @@ class CadenceSummary(BaseModel):
 
 
 class TierBreakdown(BaseModel):
-    """Count of contacts per relationship tier."""
-    A: int = 0
-    B: int = 0
-    C: int = 0
-    D: int = 0
+    """Count of contacts per relationship tier — snake_case keys for frontend."""
+    tier_a: int = 0
+    tier_b: int = 0
+    tier_c: int = 0
+    tier_d: int = 0
     total: int = 0
 
 
@@ -98,6 +100,7 @@ class DashboardResponse(BaseModel):
     cadence_summary: CadenceSummary = CadenceSummary()
     tier_breakdown: TierBreakdown = TierBreakdown()
     active_listings: int = 0  # count of properties for this user
+    active_appraisals: int = 0  # count of properties with appraisal_status in (booked, completed)
     cached: bool = False  # True if served from cache
 
 
