@@ -45,7 +45,7 @@ class PropertyResponse(BaseModel):
     suburb: str | None
     bedrooms: int | None
     bathrooms: int | None
-    has_pool: bool
+    has_pool: Optional[bool] = False
     renovation_status: str | None
     years_owned: float | None
     council_valuation: float | None
