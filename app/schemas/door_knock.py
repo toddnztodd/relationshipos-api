@@ -23,16 +23,14 @@ class DoorKnockCreate(BaseModel):
 
 
 class DoorKnockResponse(BaseModel):
+    """V2 response schema — matches the current door_knock_sessions table."""
     id: int
     user_id: int
-    person_id: Optional[int] = None
-    address: str
-    relationship_type: Optional[str] = None
-    interest_level: Optional[int] = None
+    territory_id: Optional[int] = None
+    started_at: datetime
+    ended_at: Optional[datetime] = None
+    total_knocks: int = 0
     notes: Optional[str] = None
-    follow_up_date: Optional[date] = None
-    marketing_drop: MarketingDropType = None
-    marketing_drop_note: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

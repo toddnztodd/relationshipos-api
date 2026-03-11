@@ -103,10 +103,10 @@ async def create_door_knock(
         db.add(new_prop)
         await db.flush()  # assign ID without committing
 
-    # Create the door knock session
+    # Create the door knock session (V2 schema — only pass compatible fields)
     dk = DoorKnockSession(
         user_id=current_user.id,
-        **payload.model_dump(),
+        notes=payload.notes,
     )
     db.add(dk)
     await db.flush()
