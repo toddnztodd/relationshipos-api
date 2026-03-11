@@ -367,6 +367,9 @@ async def create_activity(
     # Commit so activity_people rows are visible in the reload query
     await db.commit()
 
+    # Expire the cached object so the reload fetches fresh data from DB
+    db.expire(activity)
+
     # Reload with activity_people for response
     result = await db.execute(
         select(Activity)
@@ -425,6 +428,9 @@ async def quick_log_activity(
 
     # Commit so activity_people rows are visible in the reload query
     await db.commit()
+
+    # Expire the cached object so the reload fetches fresh data from DB
+    db.expire(activity)
 
     result = await db.execute(
         select(Activity)
