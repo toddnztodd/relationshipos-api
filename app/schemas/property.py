@@ -108,6 +108,8 @@ class PropertyResponse(BaseModel):
     last_listed_date: date | None = None
     last_listing_result: str | None = None
     sellability: int | None = None
+    estimated_value: Optional[float] = None
+    property_type: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -119,10 +121,26 @@ class PropertyResponse(BaseModel):
 class BuyerInterestCreate(BaseModel):
     person_id: int
     stage: str = Field("seen", description="seen | interested | hot | offer | purchased")
+    price_min: Optional[float] = None
+    price_max: Optional[float] = None
+    bedrooms_min: Optional[int] = None
+    bathrooms_min: Optional[int] = None
+    land_size_min: Optional[int] = None
+    preferred_suburbs: Optional[List[str]] = None
+    property_type_preference: Optional[str] = None
+    special_features: Optional[List[str]] = None
 
 
 class BuyerInterestUpdate(BaseModel):
-    stage: str = Field(..., description="seen | interested | hot | offer | purchased")
+    stage: Optional[str] = None
+    price_min: Optional[float] = None
+    price_max: Optional[float] = None
+    bedrooms_min: Optional[int] = None
+    bathrooms_min: Optional[int] = None
+    land_size_min: Optional[int] = None
+    preferred_suburbs: Optional[List[str]] = None
+    property_type_preference: Optional[str] = None
+    special_features: Optional[List[str]] = None
 
 
 class BuyerInterestPersonSummary(BaseModel):
@@ -139,6 +157,14 @@ class BuyerInterestResponse(BaseModel):
     person_id: int
     person: Optional[BuyerInterestPersonSummary] = None
     stage: str
+    price_min: Optional[float] = None
+    price_max: Optional[float] = None
+    bedrooms_min: Optional[int] = None
+    bathrooms_min: Optional[int] = None
+    land_size_min: Optional[int] = None
+    preferred_suburbs: Optional[List[str]] = None
+    property_type_preference: Optional[str] = None
+    special_features: Optional[List[str]] = None
     created_at: datetime
     updated_at: datetime
 

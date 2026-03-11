@@ -27,6 +27,11 @@ property_router = APIRouter(prefix="/properties", tags=["Buyer Interest"])
 # /buyer-interest/{id}
 top_router = APIRouter(prefix="/buyer-interest", tags=["Buyer Interest"])
 
+_PREF_FIELDS = [
+    "price_min", "price_max", "bedrooms_min", "bathrooms_min",
+    "land_size_min", "preferred_suburbs", "property_type_preference", "special_features",
+]
+
 
 def _build_response(bi: BuyerInterest) -> BuyerInterestResponse:
     person_summary = None
@@ -42,6 +47,14 @@ def _build_response(bi: BuyerInterest) -> BuyerInterestResponse:
         person_id=bi.person_id,
         person=person_summary,
         stage=bi.stage.value,
+        price_min=float(bi.price_min) if bi.price_min is not None else None,
+        price_max=float(bi.price_max) if bi.price_max is not None else None,
+        bedrooms_min=bi.bedrooms_min,
+        bathrooms_min=bi.bathrooms_min,
+        land_size_min=bi.land_size_min,
+        preferred_suburbs=bi.preferred_suburbs,
+        property_type_preference=bi.property_type_preference,
+        special_features=bi.special_features,
         created_at=bi.created_at,
         updated_at=bi.updated_at,
     )
@@ -54,7 +67,6 @@ async def list_buyer_interest(
     current_user=Depends(get_current_user),
 ):
     """List all buyer interest records for a property."""
-    # Verify property belongs to user
     prop_result = await db.execute(
         select(Property).where(Property.id == property_id, Property.user_id == current_user.id)
     )
@@ -117,6 +129,12 @@ async def create_buyer_interest(
         person_id=payload.person_id,
         stage=stage,
     )
+    # Apply preference fields
+    for field in _PREF_FIELDS:
+        val = getattr(payload, field, None)
+        if val is not None:
+            setattr(bi, field, val)
+
     db.add(bi)
     await db.flush()
     await db.refresh(bi)
@@ -130,7 +148,7 @@ async def update_buyer_interest(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    """Update the stage of a buyer interest record."""
+    """Update stage and/or preference fields of a buyer interest record."""
     result = await db.execute(
         select(BuyerInterest).where(
             BuyerInterest.id == interest_id,
@@ -141,10 +159,16 @@ async def update_buyer_interest(
     if not bi:
         raise HTTPException(status_code=404, detail="Buyer interest not found")
 
-    try:
-        bi.stage = BuyerInterestStage(payload.stage)
-    except ValueError:
-        raise HTTPException(status_code=422, detail=f"Invalid stage: {payload.stage}")
+    if payload.stage is not None:
+        try:
+            bi.stage = BuyerInterestStage(payload.stage)
+        except ValueError:
+            raise HTTPException(status_code=422, detail=f"Invalid stage: {payload.stage}")
+
+    for field in _PREF_FIELDS:
+        val = getattr(payload, field, None)
+        if val is not None:
+            setattr(bi, field, val)
 
     await db.flush()
     await db.refresh(bi)

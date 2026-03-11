@@ -8,10 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.models import (
+    BuyerInterest,
+    BuyerInterestStage,
     CommunityEntity,
     Person,
     Property,
     Signal,
+    SignalSourceType,
     SignalType,
 )
 from app.schemas.signal import (
@@ -83,6 +86,79 @@ async def detect_signals(
     Deactivates signals where conditions no longer hold.
     """
     result = await run_signal_detection(db, current_user.id)
+
+    # Also run the match engine to create/update buyer_match signals based on preference scoring
+    from app.routes.match_engine import ACTIVE_STAGES, calculate_match_score
+    THRESHOLD = 40.0
+    bi_result = await db.execute(
+        select(BuyerInterest).where(
+            BuyerInterest.user_id == current_user.id,
+            BuyerInterest.stage.in_(list(ACTIVE_STAGES)),
+        )
+    )
+    buyer_interests = bi_result.scalars().all()
+    props_result = await db.execute(select(Property).where(Property.user_id == current_user.id))
+    properties = props_result.scalars().all()
+    person_ids = list({bi.person_id for bi in buyer_interests if bi.person_id})
+    person_map: dict = {}
+    if person_ids:
+        persons_result = await db.execute(select(Person).where(Person.id.in_(person_ids)))
+        for p in persons_result.scalars().all():
+            person_map[p.id] = f"{p.first_name} {p.last_name or ''}".strip()
+    qualifying_pairs: dict = {}
+    for bi in buyer_interests:
+        for prop in properties:
+            score_result = calculate_match_score(bi, prop)
+            if score_result["score"] >= THRESHOLD:
+                existing = qualifying_pairs.get(prop.id)
+                if existing is None or score_result["score"] > existing["score"]:
+                    qualifying_pairs[prop.id] = {
+                        "score": score_result["score"],
+                        "reasons": score_result["reasons"],
+                        "buyer_name": person_map.get(bi.person_id, "Buyer") if bi.person_id else "Buyer",
+                        "property_address": prop.address,
+                        "person_id": bi.person_id,
+                    }
+    existing_sigs_result = await db.execute(
+        select(Signal).where(
+            Signal.user_id == current_user.id,
+            Signal.signal_type == SignalType.buyer_match,
+            Signal.is_active == True,
+        )
+    )
+    existing_by_prop = {s.entity_id: s for s in existing_sigs_result.scalars().all()}
+    me_created = 0
+    for prop_id, match_data in qualifying_pairs.items():
+        confidence = round(match_data["score"] / 100.0, 4)
+        reasons_preview = ", ".join(match_data["reasons"][:2])
+        description = (
+            f"{match_data['buyer_name']} matches {match_data['property_address']}"
+            + (f" — {reasons_preview}" if reasons_preview else "")
+        )
+        if prop_id in existing_by_prop:
+            sig = existing_by_prop[prop_id]
+            sig.confidence = confidence
+            sig.description = description
+            sig.source_contact_id = match_data["person_id"]
+        else:
+            sig = Signal(
+                user_id=current_user.id,
+                signal_type=SignalType.buyer_match,
+                entity_type="property",
+                entity_id=prop_id,
+                confidence=confidence,
+                source_contact_id=match_data["person_id"],
+                source_type=SignalSourceType.system,
+                description=description,
+                is_active=True,
+            )
+            db.add(sig)
+            me_created += 1
+    for prop_id, sig in existing_by_prop.items():
+        if prop_id not in qualifying_pairs:
+            sig.is_active = False
+    await db.flush()
+    result["signals_created"] = result.get("signals_created", 0) + me_created
     return SignalDetectResponse(**result)
 
 

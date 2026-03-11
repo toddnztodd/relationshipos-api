@@ -63,6 +63,7 @@ from app.routes.door_knock_v2 import (
     task_router as follow_up_tasks_router,
     nearby_router as property_nearby_router,
 )
+from app.routes.match_engine import router as match_engine_router
 
 settings = get_settings()
 
@@ -183,6 +184,9 @@ app.include_router(door_knock_sessions_router, prefix=API_PREFIX)            # /
 app.include_router(door_knock_entries_router, prefix=API_PREFIX)             # /door-knock/entries
 app.include_router(follow_up_tasks_router, prefix=API_PREFIX)                # /follow-up-tasks
 app.include_router(property_nearby_router, prefix=API_PREFIX)                # /properties/{id}/nearby
+
+# Buyer-Property Match Engine
+app.include_router(match_engine_router, prefix=API_PREFIX)                   # /match-engine/run, /buyers/{id}/matches, /properties/{id}/buyer-matches
 
 
 @app.get("/", tags=["Health"])

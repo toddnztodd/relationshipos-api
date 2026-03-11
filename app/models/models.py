@@ -13,12 +13,14 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     JSON,
+    Numeric,
     String,
     Text,
     Time,
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -232,6 +234,9 @@ class Property(Base):
     last_listed_date = Column(Date, nullable=True)
     last_listing_result = Column(Enum(ListingResultType, name="listing_result_type"), nullable=True)
     sellability = Column(Integer, nullable=True)
+    # Match engine fields
+    estimated_value = Column(Numeric, nullable=True)
+    property_type = Column(String(100), nullable=True)
 
     # New relationships
     buyer_interests = relationship("BuyerInterest", back_populates="property", cascade="all, delete-orphan")
@@ -761,6 +766,15 @@ class BuyerInterest(Base):
     property_id = Column(Integer, ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True)
     person_id = Column(Integer, ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
     stage = Column(Enum(BuyerInterestStage, name="buyer_interest_stage"), nullable=False, default=BuyerInterestStage.seen)
+    # Buyer preference fields for match engine
+    price_min = Column(Numeric, nullable=True)
+    price_max = Column(Numeric, nullable=True)
+    bedrooms_min = Column(Integer, nullable=True)
+    bathrooms_min = Column(Integer, nullable=True)
+    land_size_min = Column(Integer, nullable=True)  # sqm
+    preferred_suburbs = Column(ARRAY(String), nullable=True)
+    property_type_preference = Column(String(100), nullable=True)
+    special_features = Column(ARRAY(String), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
