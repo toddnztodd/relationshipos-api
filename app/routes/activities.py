@@ -291,6 +291,13 @@ async def create_activity(
             person_id=payload.person_id,
             transcription=payload.notes,
         ))
+        # Also trigger summary generation if linked to a person
+        if payload.person_id:
+            from app.services.summary_generation import generate_summary_background
+            asyncio.ensure_future(generate_summary_background(
+                person_id=payload.person_id,
+                user_id=current_user.id,
+            ))
 
     return activity
 
@@ -338,6 +345,13 @@ async def quick_log_activity(
             person_id=payload.person_id,
             transcription=payload.notes,
         ))
+        # Also trigger summary generation if linked to a person
+        if payload.person_id:
+            from app.services.summary_generation import generate_summary_background
+            asyncio.ensure_future(generate_summary_background(
+                person_id=payload.person_id,
+                user_id=current_user.id,
+            ))
 
     return activity
 

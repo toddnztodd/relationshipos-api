@@ -22,6 +22,8 @@ from app.routes.door_knocks import router as door_knocks_router
 from app.routes.weekly_tracking import router as weekly_tracking_router
 from app.routes.rapport_anchors import person_router as rapport_person_router
 from app.routes.rapport_anchors import top_router as rapport_top_router
+from app.routes.relationship_summaries import person_router as summary_person_router
+from app.routes.relationship_summaries import top_router as summary_top_router
 
 settings = get_settings()
 
@@ -97,6 +99,10 @@ app.include_router(weekly_tracking_router, prefix=API_PREFIX)       # /weekly-tr
 # Rapport anchors
 app.include_router(rapport_person_router, prefix=API_PREFIX)        # /people/{id}/rapport-anchors
 app.include_router(rapport_top_router, prefix=API_PREFIX)           # /rapport-anchors/{id}
+
+# Relationship summaries
+app.include_router(summary_person_router, prefix=API_PREFIX)        # /people/{id}/relationship-summary
+app.include_router(summary_top_router, prefix=API_PREFIX)           # /relationship-summaries/{id}
 
 
 @app.get("/", tags=["Health"])

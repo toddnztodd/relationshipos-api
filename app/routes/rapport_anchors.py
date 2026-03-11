@@ -7,6 +7,8 @@ Endpoints:
 - DELETE /rapport-anchors/{anchor_id}        — delete an anchor
 """
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -140,6 +142,15 @@ async def update_rapport_anchor(
 
     await db.flush()
     await db.refresh(anchor)
+
+    # Trigger background summary generation when an anchor is accepted
+    if anchor.status == AnchorStatus.accepted and anchor.person_id:
+        from app.services.summary_generation import generate_summary_background
+        asyncio.ensure_future(generate_summary_background(
+            person_id=anchor.person_id,
+            user_id=current_user.id,
+        ))
+
     return anchor
 
 

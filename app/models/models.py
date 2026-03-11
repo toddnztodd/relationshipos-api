@@ -61,6 +61,12 @@ class AnchorStatus(str, enum.Enum):
     dismissed = "dismissed"
 
 
+class SummaryStatus(str, enum.Enum):
+    suggested = "suggested"
+    accepted = "accepted"
+    dismissed = "dismissed"
+
+
 # ── Models ─────────────────────────────────────────────────────────────────────
 
 
@@ -135,6 +141,7 @@ class Person(Base):
     person_properties = relationship("PersonProperty", back_populates="person", cascade="all, delete-orphan")
     door_knock_sessions = relationship("DoorKnockSession", back_populates="person")
     rapport_anchors = relationship("RapportAnchor", back_populates="person", cascade="all, delete-orphan")
+    relationship_summaries = relationship("RelationshipSummary", back_populates="person", cascade="all, delete-orphan")
 
 
 class Property(Base):
@@ -403,4 +410,22 @@ class RapportAnchor(Base):
     # Relationships
     person = relationship("Person", foreign_keys=[person_id], back_populates="rapport_anchors")
     activity = relationship("Activity", foreign_keys=[activity_id])
+    user = relationship("User", foreign_keys=[user_id])
+
+
+class RelationshipSummary(Base):
+    """AI-generated relationship summaries for contacts."""
+    __tablename__ = "relationship_summaries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    person_id = Column(Integer, ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    summary_text = Column(Text, nullable=False)
+    status = Column(Enum(SummaryStatus, name="summary_status"), nullable=False, default=SummaryStatus.suggested)
+    is_update = Column(Boolean, default=False)
+
+    # Relationships
+    person = relationship("Person", foreign_keys=[person_id], back_populates="relationship_summaries")
     user = relationship("User", foreign_keys=[user_id])
