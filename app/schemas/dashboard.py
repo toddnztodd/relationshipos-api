@@ -136,9 +136,20 @@ class BriefingSignal(BaseModel):
     description: str
 
 
+class BriefingFollowUpTask(BaseModel):
+    id: int
+    title: str
+    description: Optional[str] = None
+    related_property_id: Optional[int] = None
+    related_person_id: Optional[int] = None
+    due_date: Optional[date] = None
+    is_completed: bool = False
+
+
 class BriefingResponse(BaseModel):
     contacts: list[BriefingContact]
     signals: list[BriefingSignal] = []
+    follow_up_tasks: list[BriefingFollowUpTask] = []
     total: int
     cached: bool = False
 

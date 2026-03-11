@@ -627,8 +627,37 @@ async def get_briefing(
             description=sig.description,
         ))
 
+    # ── 9. Fetch overdue or due-today follow-up tasks ──
+    from datetime import date as date_type
+    from app.models.models import FollowUpTask
+    from app.schemas.dashboard import BriefingFollowUpTask
+    from sqlalchemy import or_
+    today = date_type.today()
+    fut_result = await db.execute(
+        select(FollowUpTask)
+        .where(
+            FollowUpTask.user_id == uid,
+            FollowUpTask.is_completed == False,
+            or_(FollowUpTask.due_date == None, FollowUpTask.due_date <= today),
+        )
+        .order_by(FollowUpTask.due_date.asc().nullslast())
+        .limit(20)
+    )
+    briefing_tasks = [
+        BriefingFollowUpTask(
+            id=t.id,
+            title=t.title,
+            description=t.description,
+            related_property_id=t.related_property_id,
+            related_person_id=t.related_person_id,
+            due_date=t.due_date,
+            is_completed=t.is_completed,
+        )
+        for t in fut_result.scalars().all()
+    ]
     return BriefingResponse(
         contacts=contacts,
         signals=briefing_signals,
+        follow_up_tasks=briefing_tasks,
         total=len(all_people),
     )

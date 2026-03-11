@@ -57,6 +57,12 @@ from app.routes.territories import (
     coverage_router as coverage_activities_router,
     farming_router as farming_programs_router,
 )
+from app.routes.door_knock_v2 import (
+    session_router as door_knock_sessions_router,
+    entry_router as door_knock_entries_router,
+    task_router as follow_up_tasks_router,
+    nearby_router as property_nearby_router,
+)
 
 settings = get_settings()
 
@@ -171,6 +177,12 @@ app.include_router(listing_checklist_items_router, prefix=API_PREFIX)     # /che
 app.include_router(territories_router, prefix=API_PREFIX)                    # /territories/
 app.include_router(coverage_activities_router, prefix=API_PREFIX)            # /coverage-activities/
 app.include_router(farming_programs_router, prefix=API_PREFIX)               # /farming-programs/
+
+# Door Knock Workflow V2
+app.include_router(door_knock_sessions_router, prefix=API_PREFIX)            # /door-knock/sessions
+app.include_router(door_knock_entries_router, prefix=API_PREFIX)             # /door-knock/entries
+app.include_router(follow_up_tasks_router, prefix=API_PREFIX)                # /follow-up-tasks
+app.include_router(property_nearby_router, prefix=API_PREFIX)                # /properties/{id}/nearby
 
 
 @app.get("/", tags=["Health"])

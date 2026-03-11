@@ -472,24 +472,20 @@ class PersonProperty(Base):
 
 
 class DoorKnockSession(Base):
-    """Records of door knock sessions."""
+    """Door knock session (V2) — covers a territory or area."""
     __tablename__ = "door_knock_sessions"
-
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    person_id = Column(Integer, ForeignKey("people.id", ondelete="SET NULL"), nullable=True, index=True)
-    address = Column(Text, nullable=False)
-    relationship_type = Column(Text, nullable=True)
-    interest_level = Column(Integer, nullable=True)
+    territory_id = Column(Integer, ForeignKey("territories.id", ondelete="SET NULL"), nullable=True, index=True)
+    started_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    ended_at = Column(DateTime(timezone=True), nullable=True)
+    total_knocks = Column(Integer, nullable=False, default=0)
     notes = Column(Text, nullable=True)
-    follow_up_date = Column(Date, nullable=True)
-    marketing_drop = Column(String(50), nullable=True)  # just_listed | just_sold | letter | free_pen | other
-    marketing_drop_note = Column(Text, nullable=True)  # custom note when marketing_drop = 'other'
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
     # Relationships
     user = relationship("User", back_populates="door_knock_sessions")
-    person = relationship("Person", back_populates="door_knock_sessions")
+    territory = relationship("Territory", foreign_keys=[territory_id])
+    entries = relationship("DoorKnockEntry", back_populates="session", cascade="all, delete-orphan", lazy="selectin")
 
 
 class WeeklyTracking(Base):
@@ -903,3 +899,50 @@ class FarmingProgram(Base):
     # Relationships
     user = relationship("User", foreign_keys=[user_id])
     territory = relationship("Territory", back_populates="farming_programs")
+
+
+# ── Door Knock Workflow ───────────────────────────────────────────────────────
+
+
+class DoorKnockEntry(Base):
+    """A single door knock entry within a session."""
+    __tablename__ = "door_knock_entries"
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("door_knock_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    property_id = Column(Integer, ForeignKey("properties.id", ondelete="SET NULL"), nullable=True, index=True)
+    property_address = Column(String(500), nullable=False)
+    knock_result = Column(String(30), nullable=False)
+    contact_name = Column(String(255), nullable=True)
+    contact_phone = Column(String(50), nullable=True)
+    interest_level = Column(String(30), nullable=True)
+    voice_note_transcript = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_contact_id = Column(Integer, ForeignKey("people.id", ondelete="SET NULL"), nullable=True, index=True)
+    knocked_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    # Relationships
+    session = relationship("DoorKnockSession", back_populates="entries")
+    property = relationship("Property", foreign_keys=[property_id])
+    created_contact = relationship("Person", foreign_keys=[created_contact_id])
+
+
+class FollowUpTask(Base):
+    """A follow-up task linked to a person, property, or door knock session."""
+    __tablename__ = "follow_up_tasks"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = Column(String(500), nullable=False)
+    description = Column(Text, nullable=True)
+    related_property_id = Column(Integer, ForeignKey("properties.id", ondelete="SET NULL"), nullable=True)
+    related_person_id = Column(Integer, ForeignKey("people.id", ondelete="SET NULL"), nullable=True)
+    related_session_id = Column(Integer, ForeignKey("door_knock_sessions.id", ondelete="SET NULL"), nullable=True)
+    due_date = Column(Date, nullable=True)
+    is_completed = Column(Boolean, nullable=False, default=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    related_property = relationship("Property", foreign_keys=[related_property_id])
+    related_person = relationship("Person", foreign_keys=[related_person_id])
+    related_session = relationship("DoorKnockSession", foreign_keys=[related_session_id])
+
