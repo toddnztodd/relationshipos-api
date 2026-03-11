@@ -55,6 +55,12 @@ class CadenceStatus(str, enum.Enum):
     red = "red"
 
 
+class AnchorStatus(str, enum.Enum):
+    suggested = "suggested"
+    accepted = "accepted"
+    dismissed = "dismissed"
+
+
 # ── Models ─────────────────────────────────────────────────────────────────────
 
 
@@ -376,3 +382,24 @@ class WeeklyTracking(Base):
 
     # Relationships
     user = relationship("User", back_populates="weekly_tracking")
+
+
+class RapportAnchor(Base):
+    """Rapport anchors extracted from voice notes — stored as suggestions on contact profiles."""
+    __tablename__ = "rapport_anchors"
+
+    id = Column(Integer, primary_key=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    person_id = Column(Integer, ForeignKey("people.id", ondelete="SET NULL"), nullable=True, index=True)
+    relationship_group_id = Column(Integer, nullable=True, index=True)
+    activity_id = Column(Integer, ForeignKey("activities.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    anchor_text = Column(Text, nullable=False)
+    anchor_type = Column(String(20), nullable=False, default="individual")  # individual | household
+    status = Column(Enum(AnchorStatus), nullable=False, default=AnchorStatus.suggested)
+
+    # Relationships
+    person = relationship("Person", foreign_keys=[person_id])
+    activity = relationship("Activity", foreign_keys=[activity_id])
+    user = relationship("User", foreign_keys=[user_id])

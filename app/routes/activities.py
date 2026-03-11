@@ -1,5 +1,6 @@
 """Activity / Interaction Logging routes with CRUD, quick-log, and screenshot analysis."""
 
+import asyncio
 import base64
 import os
 from datetime import datetime, timezone
@@ -280,6 +281,17 @@ async def create_activity(
         )
 
     dashboard_cache.invalidate(current_user.id)
+
+    # Background anchor extraction for voice_note activities
+    if payload.interaction_type == InteractionType.voice_note and payload.notes:
+        from app.services.anchor_extraction import extract_anchors_background
+        asyncio.ensure_future(extract_anchors_background(
+            activity_id=activity.id,
+            user_id=current_user.id,
+            person_id=payload.person_id,
+            transcription=payload.notes,
+        ))
+
     return activity
 
 
@@ -316,6 +328,17 @@ async def quick_log_activity(
         )
 
     dashboard_cache.invalidate(current_user.id)
+
+    # Background anchor extraction for voice_note activities
+    if payload.interaction_type == InteractionType.voice_note and payload.notes:
+        from app.services.anchor_extraction import extract_anchors_background
+        asyncio.ensure_future(extract_anchors_background(
+            activity_id=activity.id,
+            user_id=current_user.id,
+            person_id=payload.person_id,
+            transcription=payload.notes,
+        ))
+
     return activity
 
 
