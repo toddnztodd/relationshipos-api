@@ -397,6 +397,61 @@ class ListingChecklistItem(Base):
     property = relationship("Property", back_populates="checklist_items")
 
 
+class ListingChecklist(Base):
+    """Structured 12-phase listing checklist for a property."""
+    __tablename__ = "listing_checklists"
+
+    id = Column(Integer, primary_key=True, index=True)
+    property_id = Column(Integer, ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    sale_method = Column(String(20), nullable=False)
+    current_phase = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    property = relationship("Property", foreign_keys=[property_id])
+    phases = relationship("ChecklistPhase", back_populates="checklist", cascade="all, delete-orphan", lazy="selectin", order_by="ChecklistPhase.phase_number")
+    items = relationship("ChecklistItem", back_populates="checklist", cascade="all, delete-orphan", lazy="selectin", order_by="ChecklistItem.sort_order")
+
+
+class ChecklistPhase(Base):
+    """A phase within a listing checklist."""
+    __tablename__ = "checklist_phases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    checklist_id = Column(Integer, ForeignKey("listing_checklists.id", ondelete="CASCADE"), nullable=False, index=True)
+    phase_number = Column(Integer, nullable=False)
+    phase_name = Column(String(100), nullable=False)
+    is_complete = Column(Boolean, nullable=False, default=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (UniqueConstraint("checklist_id", "phase_number", name="uq_checklist_phase"),)
+
+    # Relationships
+    checklist = relationship("ListingChecklist", back_populates="phases")
+
+
+class ChecklistItem(Base):
+    """An individual item within a listing checklist phase."""
+    __tablename__ = "checklist_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    checklist_id = Column(Integer, ForeignKey("listing_checklists.id", ondelete="CASCADE"), nullable=False, index=True)
+    phase_number = Column(Integer, nullable=False)
+    item_text = Column(String(500), nullable=False)
+    is_complete = Column(Boolean, nullable=False, default=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    due_date = Column(Date, nullable=True)
+    note = Column(Text, nullable=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Relationships
+    checklist = relationship("ListingChecklist", back_populates="items")
+
+
 class PersonProperty(Base):
     """Properties linked to a person (e.g. properties they've viewed, are interested in, own)."""
     __tablename__ = "person_properties"

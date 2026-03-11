@@ -47,6 +47,11 @@ from app.routes.signals import (
     property_router as signals_property_router,
     person_router as signals_person_router,
 )
+from app.routes.listing_checklists import (
+    property_router as listing_checklist_property_router,
+    checklists_router as listing_checklists_router,
+    items_router as listing_checklist_items_router,
+)
 
 settings = get_settings()
 
@@ -151,6 +156,11 @@ app.include_router(property_intelligence_router, prefix=API_PREFIX)    # /proper
 app.include_router(signals_router, prefix=API_PREFIX)                  # /signals, /signals/detect
 app.include_router(signals_property_router, prefix=API_PREFIX)         # /properties/{id}/signals
 app.include_router(signals_person_router, prefix=API_PREFIX)           # /people/{id}/signals
+
+# Listing Checklist V2 (structured 12-phase)
+app.include_router(listing_checklist_property_router, prefix=API_PREFIX)  # /properties/{id}/listing-checklist
+app.include_router(listing_checklists_router, prefix=API_PREFIX)          # /checklists/{id}/phase, /checklists/{id}
+app.include_router(listing_checklist_items_router, prefix=API_PREFIX)     # /checklist-items-v2/{id}
 
 
 @app.get("/", tags=["Health"])
