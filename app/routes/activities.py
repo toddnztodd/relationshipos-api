@@ -17,6 +17,7 @@ from app.schemas.activity import (
 )
 from app.services.auth import get_current_user
 from app.services import dashboard_cache
+from app.routes.people import _update_last_interaction
 
 router = APIRouter(prefix="/activities", tags=["Activities"])
 
@@ -52,18 +53,27 @@ async def create_activity(
     if payload.property_id:
         await _validate_property(db, payload.property_id, current_user.id)
 
+    activity_date = payload.date or datetime.now(timezone.utc)
     activity = Activity(
         user_id=current_user.id,
         person_id=payload.person_id,
         property_id=payload.property_id,
         interaction_type=payload.interaction_type,
-        date=payload.date or datetime.now(timezone.utc),
+        date=activity_date,
         notes=payload.notes,
         is_meaningful=payload.is_meaningful,
     )
     db.add(activity)
     await db.flush()
     await db.refresh(activity)
+
+    # Update last_interaction on the contact
+    await _update_last_interaction(
+        db, payload.person_id,
+        payload.interaction_type.value if hasattr(payload.interaction_type, 'value') else payload.interaction_type,
+        activity_date,
+    )
+
     dashboard_cache.invalidate(current_user.id)
     return activity
 
@@ -77,17 +87,26 @@ async def quick_log_activity(
     """Quick-log an interaction — optimised for speed (< 10 seconds on mobile)."""
     await _validate_person(db, payload.person_id, current_user.id)
 
+    now = datetime.now(timezone.utc)
     activity = Activity(
         user_id=current_user.id,
         person_id=payload.person_id,
         interaction_type=payload.interaction_type,
-        date=datetime.now(timezone.utc),
+        date=now,
         notes=payload.notes,
         is_meaningful=payload.is_meaningful,
     )
     db.add(activity)
     await db.flush()
     await db.refresh(activity)
+
+    # Update last_interaction on the contact
+    await _update_last_interaction(
+        db, payload.person_id,
+        payload.interaction_type.value if hasattr(payload.interaction_type, 'value') else payload.interaction_type,
+        now,
+    )
+
     dashboard_cache.invalidate(current_user.id)
     return activity
 

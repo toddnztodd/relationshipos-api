@@ -1,9 +1,10 @@
-"""People (Person) CRUD routes with search and filtering."""
+"""People (Person) CRUD routes with search, filtering, health status, and next-best."""
 
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, func, text
+from sqlalchemy import select, func, case, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -14,12 +15,73 @@ from app.schemas.person import (
     PersonResponse,
     PersonWithCadence,
     PersonSearchByPhone,
+    NextBestContact,
 )
 from app.services.auth import get_current_user
-from app.services.cadence import compute_cadence_status, get_cadence_window
+from app.services.cadence import compute_cadence_status, get_cadence_window, CADENCE_WINDOWS
 from app.services import dashboard_cache
 
 router = APIRouter(prefix="/people", tags=["People"])
+
+# ── Interaction type → channel mapping ──────────────────────────────────────
+INTERACTION_CHANNEL_MAP = {
+    "phone_call": "call",
+    "text_message": "text",
+    "email_conversation": "email",
+    "coffee_meeting": "call",       # face-to-face, closest channel
+    "door_knock": "call",           # in-person
+    "open_home_attendance": "call",  # in-person
+    "open_home_callback": "call",   # follow-up call
+}
+
+
+def _compute_health(tier: TierEnum, reference_date: datetime | None, now: datetime | None = None) -> tuple[str, int | None, int]:
+    """
+    Compute health_status, days_since_contact, and cadence_limit.
+    Uses reference_date = max(last_interaction_at, created_at).
+    """
+    if now is None:
+        now = datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+
+    cadence_limit = get_cadence_window(tier)
+
+    if reference_date is None:
+        return "Overdue", None, cadence_limit
+
+    if reference_date.tzinfo is None:
+        reference_date = reference_date.replace(tzinfo=timezone.utc)
+
+    days_since = (now - reference_date).days
+
+    if days_since > cadence_limit:
+        health = "Overdue"
+    elif days_since >= cadence_limit - 14:
+        health = "At Risk"
+    else:
+        health = "Healthy"
+
+    return health, days_since, cadence_limit
+
+
+async def _update_last_interaction(db: AsyncSession, person_id: int, interaction_type: str, interaction_date: datetime | None = None):
+    """Update last_interaction_at and last_interaction_channel on a person record."""
+    result = await db.execute(select(Person).where(Person.id == person_id))
+    person = result.scalar_one_or_none()
+    if not person:
+        return
+
+    ts = interaction_date or datetime.now(timezone.utc)
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+
+    # Only update if this interaction is more recent
+    if person.last_interaction_at is None or ts >= person.last_interaction_at:
+        person.last_interaction_at = ts
+        channel = INTERACTION_CHANNEL_MAP.get(interaction_type if isinstance(interaction_type, str) else interaction_type.value, "call")
+        person.last_interaction_channel = channel
+        await db.flush()
 
 
 @router.post("/", response_model=PersonResponse, status_code=status.HTTP_201_CREATED)
@@ -46,6 +108,87 @@ async def create_person(
     return person
 
 
+@router.get("/next-best", response_model=list[NextBestContact])
+async def next_best_contacts(
+    limit: int = Query(10, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Return top N contacts ranked by urgency for next action.
+
+    Priority:
+    1. Overdue contacts first
+    2. At Risk contacts
+    3. Tier priority (A > B > C)
+    4. Longest time since last interaction
+
+    Uses last_interaction_at (falls back to created_at) for efficient single-query ranking.
+    """
+    now = datetime.now(timezone.utc)
+
+    # Build reference_date as COALESCE(last_interaction_at, created_at)
+    ref_date = func.coalesce(Person.last_interaction_at, Person.created_at)
+
+    # Days since reference date
+    days_since_expr = func.extract("epoch", func.now() - ref_date) / 86400.0
+
+    # Cadence limit per tier
+    cadence_limit_expr = case(
+        (Person.tier == TierEnum.A, 30),
+        (Person.tier == TierEnum.B, 60),
+        else_=90,
+    )
+
+    # Tier priority (A=1, B=2, C=3) — lower is higher priority
+    tier_priority = case(
+        (Person.tier == TierEnum.A, 1),
+        (Person.tier == TierEnum.B, 2),
+        else_=3,
+    )
+
+    # Health status: 3=Overdue, 2=At Risk, 1=Healthy (sort desc for urgency)
+    health_priority = case(
+        (days_since_expr > cadence_limit_expr, 3),
+        (days_since_expr >= cadence_limit_expr - 14, 2),
+        else_=1,
+    )
+
+    query = (
+        select(Person)
+        .where(Person.user_id == current_user.id)
+        .order_by(
+            health_priority.desc(),       # Overdue first
+            tier_priority.asc(),          # A > B > C
+            days_since_expr.desc(),       # Longest since contact first
+        )
+        .limit(limit)
+    )
+
+    result = await db.execute(query)
+    people = result.scalars().all()
+
+    contacts = []
+    for p in people:
+        ref = p.last_interaction_at or p.created_at
+        health, days_since, cadence = _compute_health(p.tier, ref, now)
+        contacts.append(NextBestContact(
+            id=p.id,
+            first_name=p.first_name,
+            last_name=p.last_name,
+            nickname=p.nickname,
+            phone=p.phone,
+            email=p.email,
+            tier=p.tier,
+            health_status=health,
+            days_since_contact=days_since,
+            cadence_limit=cadence,
+            last_interaction_channel=p.last_interaction_channel,
+        ))
+
+    return contacts
+
+
 @router.get("/", response_model=list[PersonWithCadence])
 async def list_people(
     tier: Optional[TierEnum] = Query(None),
@@ -65,6 +208,7 @@ async def list_people(
     Uses a single batch query to fetch last-activity dates for all people
     at once — avoids N+1 queries that caused timeouts with large contact lists.
     """
+    now = datetime.now(timezone.utc)
     query = select(Person).where(Person.user_id == current_user.id)
 
     if tier:
@@ -108,16 +252,24 @@ async def list_people(
     )
     last_activity_map: dict = {row.person_id: row.last_date for row in act_result}
 
-    # ── Enrich each person with cadence status ────────────────────────────────
+    # ── Enrich each person with cadence status and health fields ─────────────
     enriched = []
     for p in people:
         last_meaningful = last_activity_map.get(p.id)
         cadence_status, days_since = compute_cadence_status(p.tier, last_meaningful)
         window = get_cadence_window(p.tier)
+
+        # Health uses max(last_interaction_at, created_at)
+        ref = p.last_interaction_at or p.created_at
+        health, days_since_contact, cadence_limit = _compute_health(p.tier, ref, now)
+
         person_data = PersonWithCadence.model_validate(p)
         person_data.cadence_status = cadence_status.value
         person_data.days_since_last_meaningful = days_since
         person_data.cadence_window_days = window
+        person_data.health_status = health
+        person_data.days_since_contact = days_since_contact
+        person_data.cadence_limit = cadence_limit
         enriched.append(person_data)
 
     return enriched
@@ -145,7 +297,8 @@ async def get_person(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get a single person by ID with cadence status."""
+    """Get a single person by ID with cadence status and health fields."""
+    now = datetime.now(timezone.utc)
     result = await db.execute(
         select(Person).where(Person.id == person_id, Person.user_id == current_user.id)
     )
@@ -161,10 +314,16 @@ async def get_person(
     cadence_status, days_since = compute_cadence_status(person.tier, last_meaningful)
     window = get_cadence_window(person.tier)
 
+    ref = person.last_interaction_at or person.created_at
+    health, days_since_contact, cadence_limit = _compute_health(person.tier, ref, now)
+
     person_data = PersonWithCadence.model_validate(person)
     person_data.cadence_status = cadence_status.value
     person_data.days_since_last_meaningful = days_since
     person_data.cadence_window_days = window
+    person_data.health_status = health
+    person_data.days_since_contact = days_since_contact
+    person_data.cadence_limit = cadence_limit
     return person_data
 
 

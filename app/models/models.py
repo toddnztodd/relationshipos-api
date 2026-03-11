@@ -107,6 +107,8 @@ class Person(Base):
     buyer_interest = Column(Integer, nullable=True)
     seller_likelihood = Column(Integer, nullable=True)
     nickname = Column(String(255), nullable=True)
+    last_interaction_at = Column(DateTime(timezone=True), nullable=True)
+    last_interaction_channel = Column(String(50), nullable=True)  # call, text, whatsapp, email, messenger, linkedin
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

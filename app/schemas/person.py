@@ -92,6 +92,8 @@ class PersonResponse(BaseModel):
     buyer_interest: Optional[int] = None
     seller_likelihood: Optional[int] = None
     nickname: Optional[str] = None
+    last_interaction_at: Optional[datetime] = None
+    last_interaction_channel: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -99,11 +101,32 @@ class PersonResponse(BaseModel):
 
 
 class PersonWithCadence(PersonResponse):
-    """Person response enriched with cadence status."""
+    """Person response enriched with cadence status and health fields."""
     cadence_status: str = "green"  # green / amber / red
     days_since_last_meaningful: Optional[int] = None
     cadence_window_days: int = 90
+    # New health fields
+    health_status: str = "Overdue"  # Healthy | At Risk | Overdue
+    days_since_contact: Optional[int] = None
+    cadence_limit: int = 90  # 30, 60, or 90 based on tier
 
 
 class PersonSearchByPhone(BaseModel):
     phone: str = Field(..., max_length=50)
+
+
+class NextBestContact(BaseModel):
+    """Compact contact for the next-best-action list."""
+    id: int
+    first_name: str
+    last_name: Optional[str] = None
+    nickname: Optional[str] = None
+    phone: str
+    email: Optional[str] = None
+    tier: TierEnum
+    health_status: str  # Healthy | At Risk | Overdue
+    days_since_contact: Optional[int] = None
+    cadence_limit: int
+    last_interaction_channel: Optional[str] = None
+
+    model_config = {"from_attributes": True}
