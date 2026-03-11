@@ -22,10 +22,10 @@ from app.routes.auth import get_current_user
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 
-router = APIRouter(prefix="/api/v1/context-nodes", tags=["Context Nodes"])
-person_router = APIRouter(prefix="/api/v1/people", tags=["Context Nodes"])
-property_router = APIRouter(prefix="/api/v1/properties", tags=["Context Nodes"])
-suggestion_router = APIRouter(prefix="/api/v1/context-node-suggestions", tags=["Context Nodes"])
+router = APIRouter(prefix="/context-nodes", tags=["Context Nodes"])
+person_router = APIRouter(prefix="/people", tags=["Context Nodes"])
+property_router = APIRouter(prefix="/properties", tags=["Context Nodes"])
+suggestion_router = APIRouter(prefix="/context-node-suggestions", tags=["Context Nodes"])
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
