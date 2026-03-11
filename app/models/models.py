@@ -144,6 +144,7 @@ class Person(Base):
     rapport_anchors = relationship("RapportAnchor", back_populates="person", cascade="all, delete-orphan")
     relationship_summaries = relationship("RelationshipSummary", back_populates="person", cascade="all, delete-orphan")
     suggested_outreach = relationship("SuggestedOutreach", back_populates="person", cascade="all, delete-orphan")
+    context_node_links = relationship("PersonContextNode", back_populates="person", cascade="all, delete-orphan")
 
 
 class Property(Base):
@@ -179,6 +180,7 @@ class Property(Base):
     activities = relationship("Activity", back_populates="property", cascade="all, delete-orphan")
     person_links = relationship("PropertyPerson", back_populates="property", cascade="all, delete-orphan")
     checklist_items = relationship("ListingChecklistItem", back_populates="property", cascade="all, delete-orphan")
+    context_node_links = relationship("PropertyContextNode", back_populates="property", cascade="all, delete-orphan")
 
 
 class ActivityPerson(Base):
@@ -464,4 +466,96 @@ class SuggestedOutreach(Base):
 
     # Relationships
     person = relationship("Person", foreign_keys=[person_id], back_populates="suggested_outreach")
+    user = relationship("User", foreign_keys=[user_id])
+
+class ContextNodeType(str, PyEnum):
+    community = "community"
+    school = "school"
+    sport = "sport"
+    location = "location"
+    interest = "interest"
+    network = "network"
+    other = "other"
+
+
+class ContextSuggestionStatus(str, PyEnum):
+    suggested = "suggested"
+    accepted = "accepted"
+    dismissed = "dismissed"
+
+
+class ContextNode(Base):
+    """A shared context node (community, school, sport, etc.)."""
+    __tablename__ = "context_nodes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(Text, nullable=False)
+    type = Column(Enum(ContextNodeType, name="context_node_type"), nullable=False, default=ContextNodeType.other)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Relationships
+    person_links = relationship("PersonContextNode", back_populates="context_node", cascade="all, delete-orphan")
+    property_links = relationship("PropertyContextNode", back_populates="context_node", cascade="all, delete-orphan")
+
+
+class PersonContextNode(Base):
+    """Links a person to a context node."""
+    __tablename__ = "person_context_nodes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    context_node_id = Column(Integer, ForeignKey("context_nodes.id", ondelete="CASCADE"), nullable=False, index=True)
+    person_id = Column(Integer, ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    __table_args__ = (UniqueConstraint("context_node_id", "person_id", name="uq_pcn_node_person"),)
+
+    # Relationships
+    context_node = relationship("ContextNode", back_populates="person_links")
+    person = relationship("Person", back_populates="context_node_links")
+
+
+class PropertyContextNode(Base):
+    """Links a property to a context node."""
+    __tablename__ = "property_context_nodes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    context_node_id = Column(Integer, ForeignKey("context_nodes.id", ondelete="CASCADE"), nullable=False, index=True)
+    property_id = Column(Integer, ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    __table_args__ = (UniqueConstraint("context_node_id", "property_id", name="uq_propcn_node_property"),)
+
+    # Relationships
+    context_node = relationship("ContextNode", back_populates="property_links")
+    property = relationship("Property", back_populates="context_node_links")
+
+
+class RelationshipGroupContextNode(Base):
+    """Links a relationship group to a context node."""
+    __tablename__ = "relationship_group_context_nodes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    context_node_id = Column(Integer, ForeignKey("context_nodes.id", ondelete="CASCADE"), nullable=False, index=True)
+    relationship_group_id = Column(Integer, nullable=False, index=True)
+
+    __table_args__ = (UniqueConstraint("context_node_id", "relationship_group_id", name="uq_rgcn_node_rg"),)
+
+    # Relationships
+    context_node = relationship("ContextNode")
+
+
+class ContextNodeSuggestion(Base):
+    """AI-suggested context nodes from voice notes and conversation updates."""
+    __tablename__ = "context_node_suggestions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    person_id = Column(Integer, ForeignKey("people.id", ondelete="SET NULL"), nullable=True, index=True)
+    activity_id = Column(Integer, ForeignKey("activities.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    suggested_name = Column(Text, nullable=False)
+    suggested_type = Column(Enum(ContextNodeType, name="context_node_type"), nullable=False, default=ContextNodeType.other)
+    status = Column(Enum(ContextSuggestionStatus, name="context_suggestion_status"), nullable=False, default=ContextSuggestionStatus.suggested)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Relationships
+    person = relationship("Person", foreign_keys=[person_id])
+    activity = relationship("Activity", foreign_keys=[activity_id])
     user = relationship("User", foreign_keys=[user_id])

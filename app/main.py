@@ -25,6 +25,12 @@ from app.routes.rapport_anchors import top_router as rapport_top_router
 from app.routes.relationship_summaries import person_router as summary_person_router
 from app.routes.relationship_summaries import top_router as summary_top_router
 from app.routes.open_homes import router as open_homes_router
+from app.routes.context_nodes import (
+    router as context_nodes_router,
+    person_router as context_person_router,
+    property_router as context_property_router,
+    suggestion_router as context_suggestion_router,
+)
 
 settings = get_settings()
 
@@ -107,6 +113,12 @@ app.include_router(summary_top_router, prefix=API_PREFIX)           # /relations
 
 # Open homes
 app.include_router(open_homes_router, prefix=API_PREFIX)            # /open-homes/{id}/vendor-update
+
+# Context nodes
+app.include_router(context_nodes_router, prefix=API_PREFIX)         # /context-nodes/
+app.include_router(context_person_router, prefix=API_PREFIX)        # /people/{id}/context-nodes
+app.include_router(context_property_router, prefix=API_PREFIX)      # /properties/{id}/context-nodes
+app.include_router(context_suggestion_router, prefix=API_PREFIX)    # /context-node-suggestions/{id}
 
 
 @app.get("/", tags=["Health"])

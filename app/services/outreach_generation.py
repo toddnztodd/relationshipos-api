@@ -26,6 +26,8 @@ from app.models.models import (
     RelationshipSummary,
     SummaryStatus,
     SuggestedOutreach,
+    PersonContextNode,
+    ContextNode,
 )
 
 logger = logging.getLogger(__name__)
@@ -113,6 +115,9 @@ Relationship summary:
 Key rapport anchors:
 {anchors}
 
+Context nodes (communities, schools, sports, etc.):
+{context_nodes}
+
 Most recent interaction:
 {last_interaction}
 
@@ -198,12 +203,31 @@ async def _generate_and_store(
                 f"- {a.anchor_text}" for a in anchors
             ) if anchors else "(none)"
 
-            # Fallback: if no summary and no anchors, skip
-            if summary_text == "(none)" and anchors_text == "(none)":
+            # 4. Get context nodes for this person (up to 2)
+            result = await db.execute(
+                select(PersonContextNode)
+                .where(PersonContextNode.person_id == person_id)
+                .limit(2)
+            )
+            pcn_links = result.scalars().all()
+            context_nodes_text = "(none)"
+            if pcn_links:
+                node_ids = [link.context_node_id for link in pcn_links]
+                result = await db.execute(
+                    select(ContextNode).where(ContextNode.id.in_(node_ids))
+                )
+                nodes = result.scalars().all()
+                if nodes:
+                    context_nodes_text = ", ".join(
+                        f"{n.name} ({n.type.value})" for n in nodes
+                    )
+
+            # Fallback: if no summary and no anchors and no context nodes, skip
+            if summary_text == "(none)" and anchors_text == "(none)" and context_nodes_text == "(none)":
                 logger.info("No material for outreach generation for person %s", person_id)
                 return
 
-            # 4. Get most recent interaction note
+            # 5. Get most recent interaction note
             result = await db.execute(
                 select(Activity)
                 .where(
@@ -222,17 +246,18 @@ async def _generate_and_store(
                 else "(none)"
             )
 
-            # 5. Select channel-specific rules
+            # 6. Select channel-specific rules
             channel_rules = _CHANNEL_RULES.get(preferred_channel, _DEFAULT_RULES)
             # Inject first name into email template if needed
             channel_rules = channel_rules.replace("{contact_first_name}", contact_first_name)
 
-            # 6. Call OpenAI
+            # 7. Call OpenAI
             prompt = _USER_PROMPT.format(
                 channel_rules=channel_rules,
                 contact_name=contact_name,
                 summary=summary_text,
                 anchors=anchors_text,
+                context_nodes=context_nodes_text,
                 last_interaction=last_interaction,
             )
 
@@ -251,7 +276,7 @@ async def _generate_and_store(
                 logger.warning("Empty outreach message generated for person %s", person_id)
                 return
 
-            # 7. Mark any existing current outreach as not current
+            # 8. Mark any existing current outreach as not current
             result = await db.execute(
                 select(SuggestedOutreach)
                 .where(
@@ -263,7 +288,7 @@ async def _generate_and_store(
             for old in result.scalars().all():
                 old.is_current = False
 
-            # 8. Store new outreach
+            # 9. Store new outreach
             outreach = SuggestedOutreach(
                 person_id=person_id,
                 user_id=user_id,

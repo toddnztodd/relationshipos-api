@@ -26,6 +26,8 @@ from app.models.models import (
     AnchorStatus,
     RelationshipSummary,
     SummaryStatus,
+    PersonContextNode,
+    ContextNode,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,6 +47,9 @@ Contact name: {contact_name}
 
 Accepted rapport anchors:
 {anchors}
+
+Context nodes (communities, schools, sports, etc.):
+{context_nodes}
 
 Recent voice note transcriptions:
 {voice_notes}
@@ -128,7 +133,26 @@ async def _generate_and_store(
                 f"- [{a.anchor_type}] {a.anchor_text}" for a in anchors
             ) if anchors else "(none)"
 
-            # 3. Get last 5 voice_note activities (via legacy + join table)
+            # 3. Get context nodes for this person
+            result = await db.execute(
+                select(PersonContextNode)
+                .where(PersonContextNode.person_id == person_id)
+                .limit(10)
+            )
+            pcn_links = result.scalars().all()
+            context_nodes_text = "(none)"
+            if pcn_links:
+                node_ids = [link.context_node_id for link in pcn_links]
+                result = await db.execute(
+                    select(ContextNode).where(ContextNode.id.in_(node_ids))
+                )
+                nodes = result.scalars().all()
+                if nodes:
+                    context_nodes_text = "\n".join(
+                        f"- [{n.type.value}] {n.name}" for n in nodes
+                    )
+
+            # 4. Get last 5 voice_note activities (via legacy + join table)
             result = await db.execute(
                 select(Activity)
                 .where(
@@ -145,7 +169,7 @@ async def _generate_and_store(
                 a.notes for a in voice_notes if a.notes
             ) if voice_notes else "(none)"
 
-            # 4. Get last 5 other interaction notes (via legacy + join table)
+            # 5. Get last 5 other interaction notes (via legacy + join table)
             result = await db.execute(
                 select(Activity)
                 .where(
@@ -163,15 +187,16 @@ async def _generate_and_store(
                 f"[{a.interaction_type.value}] {a.notes}" for a in interactions if a.notes
             ) if interactions else "(none)"
 
-            # 5. Check if there's enough material to generate a summary
-            if anchors_text == "(none)" and voice_notes_text == "(none)" and interactions_text == "(none)":
+            # 6. Check if there's enough material to generate a summary
+            if anchors_text == "(none)" and voice_notes_text == "(none)" and interactions_text == "(none)" and context_nodes_text == "(none)":
                 logger.info("No material for summary generation for person %s", person_id)
                 return
 
-            # 6. Call OpenAI
+            # 7. Call OpenAI
             prompt = _SUMMARY_PROMPT.format(
                 contact_name=contact_name,
                 anchors=anchors_text,
+                context_nodes=context_nodes_text,
                 voice_notes=voice_notes_text,
                 interactions=interactions_text,
             )
@@ -191,7 +216,7 @@ async def _generate_and_store(
                 logger.warning("Empty summary generated for person %s", person_id)
                 return
 
-            # 7. Check if an accepted summary already exists
+            # 8. Check if an accepted summary already exists
             result = await db.execute(
                 select(RelationshipSummary)
                 .where(
@@ -203,7 +228,7 @@ async def _generate_and_store(
             )
             existing_accepted = result.scalar_one_or_none()
 
-            # 8. Store the new summary
+            # 9. Store the new summary
             is_update = existing_accepted is not None
             new_summary = RelationshipSummary(
                 person_id=person_id,

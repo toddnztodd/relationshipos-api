@@ -12,7 +12,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.database import get_db, async_session_factory
+from app.database import get_db
 from app.models.models import User, Person, Property, Activity, ActivityPerson, InteractionType
 from app.schemas.activity import (
     ActivityCreate,
@@ -86,17 +86,8 @@ async def _create_activity_people(db: AsyncSession, activity_id: int, person_ids
     await db.flush()
 
 
-def _activity_to_response(activity: Activity) -> dict:
-    """Convert an Activity ORM object to a dict with participants."""
-    participants = []
-    if activity.activity_people:
-        for ap in activity.activity_people:
-            if ap.person:
-                participants.append(ParticipantInfo(
-                    id=ap.person.id,
-                    first_name=ap.person.first_name,
-                    last_name=ap.person.last_name,
-                ))
+def _build_activity_dict(activity: Activity, participants: list) -> dict:
+    """Build the response dict for an Activity with a given participants list."""
     return {
         "id": activity.id,
         "user_id": activity.user_id,
@@ -117,29 +108,76 @@ def _activity_to_response(activity: Activity) -> dict:
     }
 
 
+def _activity_to_response(activity: Activity) -> dict:
+    """Convert an Activity ORM object to a dict with participants (from loaded relationships)."""
+    participants = []
+    if activity.activity_people:
+        for ap in activity.activity_people:
+            if ap.person:
+                participants.append(ParticipantInfo(
+                    id=ap.person.id,
+                    first_name=ap.person.first_name,
+                    last_name=ap.person.last_name,
+                ))
+    return _build_activity_dict(activity, participants)
+
+
+def _activity_to_response_with_persons(activity: Activity, persons: dict[int, Person]) -> dict:
+    """Build response using pre-validated Person objects — bypasses ORM relationship loading."""
+    participants = [
+        ParticipantInfo(id=p.id, first_name=p.first_name, last_name=p.last_name)
+        for p in persons.values()
+    ]
+    return _build_activity_dict(activity, participants)
+
+
 def _trigger_background_tasks(activity: Activity, all_person_ids: list[int], user_id: int):
-    """Fire background anchor extraction and summary generation for voice_note activities."""
-    if activity.interaction_type != InteractionType.voice_note or not activity.notes:
+    """Fire background extraction tasks for voice_note and conversation_update activities."""
+    if not activity.notes:
+        return
+
+    is_voice_note = activity.interaction_type == InteractionType.voice_note
+    is_conversation = activity.interaction_type == InteractionType.conversation_update
+
+    if not (is_voice_note or is_conversation):
         return
 
     from app.services.anchor_extraction import extract_anchors_background
     from app.services.summary_generation import generate_summary_background
+    from app.services.context_extraction import extract_context_nodes_background
 
     for pid in all_person_ids:
-        asyncio.ensure_future(extract_anchors_background(
+        # Anchor extraction and summary generation — voice notes only
+        if is_voice_note:
+            asyncio.ensure_future(extract_anchors_background(
+                activity_id=activity.id,
+                user_id=user_id,
+                person_id=pid,
+                transcription=activity.notes,
+            ))
+            asyncio.ensure_future(generate_summary_background(
+                person_id=pid,
+                user_id=user_id,
+            ))
+
+        # Context node extraction — both voice notes and conversation updates
+        asyncio.ensure_future(extract_context_nodes_background(
             activity_id=activity.id,
             user_id=user_id,
             person_id=pid,
             transcription=activity.notes,
         ))
-        asyncio.ensure_future(generate_summary_background(
-            person_id=pid,
-            user_id=user_id,
-        ))
 
-    # Also fire for person_id=None case (property-only voice note)
+    # Also fire for person_id=None case (property-only)
     if not all_person_ids:
-        asyncio.ensure_future(extract_anchors_background(
+        if is_voice_note:
+            asyncio.ensure_future(extract_anchors_background(
+                activity_id=activity.id,
+                user_id=user_id,
+                person_id=None,
+                transcription=activity.notes,
+            ))
+        asyncio.ensure_future(extract_context_nodes_background(
             activity_id=activity.id,
             user_id=user_id,
             person_id=None,
@@ -324,9 +362,10 @@ async def create_activity(
     # Resolve all person IDs (merge person_id + people_ids)
     all_person_ids = _resolve_people_ids(payload.person_id, payload.people_ids)
 
-    # Validate all people belong to user
+    # Validate all people belong to user — collect Person objects for response
+    validated_persons: dict[int, Person] = {}
     for pid in all_person_ids:
-        await _validate_person(db, pid, current_user.id)
+        validated_persons[pid] = await _validate_person(db, pid, current_user.id)
     if payload.property_id:
         await _validate_property(db, payload.property_id, current_user.id)
 
@@ -364,24 +403,11 @@ async def create_activity(
 
     dashboard_cache.invalidate(current_user.id)
 
-    # Flush all pending writes (activity + activity_people) within the current transaction.
-    # get_db will commit at the end of the request — no manual commit needed.
-    await db.flush()
-
-    # Reload within the same session — populate_existing forces SQLAlchemy to
-    # overwrite the identity-map cache so the freshly flushed activity_people rows appear.
-    result = await db.execute(
-        select(Activity)
-        .options(selectinload(Activity.activity_people).selectinload(ActivityPerson.person))
-        .where(Activity.id == activity.id)
-        .execution_options(populate_existing=True)
-    )
-    activity = result.scalar_one()
-
     # Background tasks for all participants
     _trigger_background_tasks(activity, all_person_ids, current_user.id)
 
-    return _activity_to_response(activity)
+    # Build response directly from validated persons — avoids ORM identity-map cache issues
+    return _activity_to_response_with_persons(activity, validated_persons)
 
 
 @router.post("/quick-log", response_model=ActivityResponse, status_code=status.HTTP_201_CREATED)
@@ -393,8 +419,9 @@ async def quick_log_activity(
     """Quick-log an interaction — optimised for speed (< 10 seconds on mobile)."""
     all_person_ids = _resolve_people_ids(payload.person_id, payload.people_ids)
 
+    validated_persons: dict[int, Person] = {}
     for pid in all_person_ids:
-        await _validate_person(db, pid, current_user.id)
+        validated_persons[pid] = await _validate_person(db, pid, current_user.id)
 
     compat_person_id = payload.person_id
     if not compat_person_id and len(all_person_ids) == 1:
@@ -426,23 +453,10 @@ async def quick_log_activity(
 
     dashboard_cache.invalidate(current_user.id)
 
-    # Flush all pending writes within the current transaction.
-    # get_db will commit at the end of the request.
-    await db.flush()
-
-    # Reload within the same session — populate_existing forces SQLAlchemy to
-    # overwrite the identity-map cache so the freshly flushed activity_people rows appear.
-    result = await db.execute(
-        select(Activity)
-        .options(selectinload(Activity.activity_people).selectinload(ActivityPerson.person))
-        .where(Activity.id == activity.id)
-        .execution_options(populate_existing=True)
-    )
-    activity = result.scalar_one()
-
     _trigger_background_tasks(activity, all_person_ids, current_user.id)
 
-    return _activity_to_response(activity)
+    # Build response directly from validated persons — avoids ORM identity-map cache issues
+    return _activity_to_response_with_persons(activity, validated_persons)
 
 
 @router.get("/", response_model=list[ActivityResponse])
