@@ -8,6 +8,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_, select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -210,7 +211,12 @@ async def list_person_referrals(
         raise HTTPException(status_code=404, detail="Person not found")
 
     r_result = await db.execute(
-        select(Referral).where(
+        select(Referral)
+        .options(
+            selectinload(Referral.referrer),
+            selectinload(Referral.referred),
+        )
+        .where(
             Referral.user_id == current_user.id,
             or_(
                 Referral.referrer_person_id == person_id,
@@ -219,18 +225,7 @@ async def list_person_referrals(
         ).order_by(Referral.created_at.desc())
     )
     refs = r_result.scalars().all()
-
-    responses = []
-    for ref in refs:
-        if not ref.referrer:
-            rr_res = await db.execute(select(Person).where(Person.id == ref.referrer_person_id))
-            ref.referrer = rr_res.scalar_one_or_none()
-        if not ref.referred:
-            rd_res = await db.execute(select(Person).where(Person.id == ref.referred_person_id))
-            ref.referred = rd_res.scalar_one_or_none()
-        responses.append(_referral_to_response(ref))
-
-    return responses
+    return [_referral_to_response(ref) for ref in refs]
 
 
 # ── Create referral ───────────────────────────────────────────────────────────
@@ -313,7 +308,12 @@ async def update_referral(
     current_user: User = Depends(get_current_user),
 ):
     ref_res = await db.execute(
-        select(Referral).where(
+        select(Referral)
+        .options(
+            selectinload(Referral.referrer),
+            selectinload(Referral.referred),
+        )
+        .where(
             Referral.id == referral_id,
             Referral.user_id == current_user.id,
         )
@@ -363,16 +363,16 @@ async def update_referral(
 
     ref.updated_at = datetime.now(timezone.utc)
     await db.flush()
-    await db.refresh(ref)
-
-    # Load relationships if not present
-    if not ref.referrer:
-        rr_res = await db.execute(select(Person).where(Person.id == ref.referrer_person_id))
-        ref.referrer = rr_res.scalar_one_or_none()
-    if not ref.referred:
-        rd_res = await db.execute(select(Person).where(Person.id == ref.referred_person_id))
-        ref.referred = rd_res.scalar_one_or_none()
-
+    # Re-fetch with relationships loaded
+    updated_res = await db.execute(
+        select(Referral)
+        .options(
+            selectinload(Referral.referrer),
+            selectinload(Referral.referred),
+        )
+        .where(Referral.id == referral_id)
+    )
+    ref = updated_res.scalar_one()
     return _referral_to_response(ref)
 
 
@@ -385,7 +385,14 @@ async def list_referrals(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    query = select(Referral).where(Referral.user_id == current_user.id)
+    query = (
+        select(Referral)
+        .options(
+            selectinload(Referral.referrer),
+            selectinload(Referral.referred),
+        )
+        .where(Referral.user_id == current_user.id)
+    )
 
     if status:
         query = query.where(Referral.referral_status == status)
@@ -395,18 +402,7 @@ async def list_referrals(
     query = query.order_by(Referral.created_at.desc())
     r_result = await db.execute(query)
     refs = r_result.scalars().all()
-
-    responses = []
-    for ref in refs:
-        if not ref.referrer:
-            rr_res = await db.execute(select(Person).where(Person.id == ref.referrer_person_id))
-            ref.referrer = rr_res.scalar_one_or_none()
-        if not ref.referred:
-            rd_res = await db.execute(select(Person).where(Person.id == ref.referred_person_id))
-            ref.referred = rd_res.scalar_one_or_none()
-        responses.append(_referral_to_response(ref))
-
-    return responses
+    return [_referral_to_response(ref) for ref in refs]
 
 
 # ── Soft delete (close) referral ──────────────────────────────────────────────

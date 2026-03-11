@@ -984,6 +984,6 @@ class Referral(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     # Relationships
-    user = relationship("User", foreign_keys=[user_id])
-    referrer = relationship("Person", foreign_keys=[referrer_person_id])
-    referred = relationship("Person", foreign_keys=[referred_person_id])
+    user = relationship("User", foreign_keys=[user_id], lazy="selectin")
+    referrer = relationship("Person", foreign_keys=[referrer_person_id], lazy="selectin")
+    referred = relationship("Person", foreign_keys=[referred_person_id], lazy="selectin")
