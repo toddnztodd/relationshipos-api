@@ -1,9 +1,12 @@
-"""Activity / Interaction Logging routes with CRUD and quick-log."""
+"""Activity / Interaction Logging routes with CRUD, quick-log, and screenshot analysis."""
 
+import base64
+import os
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from openai import AsyncOpenAI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,12 +17,32 @@ from app.schemas.activity import (
     ActivityQuickLog,
     ActivityUpdate,
     ActivityResponse,
+    ScreenshotAnalysisResponse,
 )
 from app.services.auth import get_current_user
 from app.services import dashboard_cache
 from app.routes.people import _update_last_interaction
 
 router = APIRouter(prefix="/activities", tags=["Activities"])
+
+# Lazy-initialised OpenAI async client
+_openai_client: Optional[AsyncOpenAI] = None
+
+
+def _get_openai_client() -> AsyncOpenAI:
+    global _openai_client
+    if _openai_client is None:
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="OpenAI API key not configured on server.",
+            )
+        _openai_client = AsyncOpenAI(api_key=api_key)
+    return _openai_client
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
 
 
 async def _validate_person(db: AsyncSession, person_id: int, user_id: int) -> Person:
@@ -42,6 +65,116 @@ async def _validate_property(db: AsyncSession, property_id: int, user_id: int) -
     return prop
 
 
+# ── Screenshot Analysis ────────────────────────────────────────────────────────
+
+_ANALYSIS_PROMPT = """You are a real-estate CRM assistant. Analyse the conversation screenshot and extract the following information in JSON format only (no markdown, no explanation):
+
+{
+  "summary": "<one or two sentence plain-English summary of what the conversation is about>",
+  "participants": ["<name or phone number of each participant, as a list>"],
+  "property": "<property address or description if mentioned, otherwise null>",
+  "datetime": "<ISO-8601 datetime string if a date/time is visible in the conversation, otherwise null>"
+}
+
+Rules:
+- Return ONLY valid JSON, nothing else.
+- If a field cannot be determined, use null (for strings) or [] (for participants).
+- Do not include any personally sensitive information beyond what is visible in the screenshot.
+- Keep the summary concise and professional.
+"""
+
+
+@router.post(
+    "/analyze-screenshot",
+    response_model=ScreenshotAnalysisResponse,
+    summary="Analyse a conversation screenshot with OpenAI Vision",
+    description=(
+        "Upload a screenshot of a conversation (WhatsApp, SMS, email, etc.). "
+        "The image is sent to OpenAI Vision for analysis and immediately discarded — "
+        "it is never stored on disk or in the database. "
+        "Returns extracted summary, participants, property reference, and datetime."
+    ),
+)
+async def analyze_screenshot(
+    image: UploadFile = File(..., description="Screenshot image file (JPEG, PNG, WEBP, GIF)"),
+    current_user: User = Depends(get_current_user),
+):
+    """Analyse a conversation screenshot and return structured data."""
+    # Validate content type
+    allowed_types = {"image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"}
+    content_type = (image.content_type or "").lower()
+    if content_type not in allowed_types:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unsupported image type '{content_type}'. Allowed: JPEG, PNG, WEBP, GIF.",
+        )
+
+    # Read image bytes (max 20 MB guard)
+    image_bytes = await image.read()
+    if len(image_bytes) > 20 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Image must be smaller than 20 MB.",
+        )
+
+    # Encode to base64 data URL for OpenAI Vision
+    b64_image = base64.b64encode(image_bytes).decode("utf-8")
+    data_url = f"data:{content_type};base64,{b64_image}"
+
+    # Call OpenAI Vision API
+    client = _get_openai_client()
+    try:
+        response = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            max_tokens=512,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": _ANALYSIS_PROMPT},
+                        {"type": "image_url", "image_url": {"url": data_url, "detail": "low"}},
+                    ],
+                }
+            ],
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"OpenAI Vision API error: {exc}",
+        )
+
+    # Parse the JSON response
+    raw_text = (response.choices[0].message.content or "").strip()
+
+    import json
+
+    try:
+        # Strip markdown code fences if model wraps the JSON
+        if raw_text.startswith("```"):
+            raw_text = raw_text.split("```")[1]
+            if raw_text.startswith("json"):
+                raw_text = raw_text[4:]
+        parsed = json.loads(raw_text)
+    except json.JSONDecodeError:
+        # Return best-effort partial result
+        return ScreenshotAnalysisResponse(
+            summary=raw_text[:500] if raw_text else None,
+            participants=[],
+            property=None,
+            datetime=None,
+        )
+
+    return ScreenshotAnalysisResponse(
+        summary=parsed.get("summary"),
+        participants=parsed.get("participants") or [],
+        property=parsed.get("property"),
+        datetime=parsed.get("datetime"),
+    )
+
+
+# ── Standard CRUD ──────────────────────────────────────────────────────────────
+
+
 @router.post("/", response_model=ActivityResponse, status_code=status.HTTP_201_CREATED)
 async def create_activity(
     payload: ActivityCreate,
@@ -62,6 +195,7 @@ async def create_activity(
         date=activity_date,
         notes=payload.notes,
         is_meaningful=payload.is_meaningful,
+        source=payload.source,
     )
     db.add(activity)
     await db.flush()
@@ -70,7 +204,7 @@ async def create_activity(
     # Update last_interaction on the contact
     await _update_last_interaction(
         db, payload.person_id,
-        payload.interaction_type.value if hasattr(payload.interaction_type, 'value') else payload.interaction_type,
+        payload.interaction_type.value if hasattr(payload.interaction_type, "value") else payload.interaction_type,
         activity_date,
     )
 
@@ -95,6 +229,7 @@ async def quick_log_activity(
         date=now,
         notes=payload.notes,
         is_meaningful=payload.is_meaningful,
+        source=payload.source,
     )
     db.add(activity)
     await db.flush()
@@ -103,7 +238,7 @@ async def quick_log_activity(
     # Update last_interaction on the contact
     await _update_last_interaction(
         db, payload.person_id,
-        payload.interaction_type.value if hasattr(payload.interaction_type, 'value') else payload.interaction_type,
+        payload.interaction_type.value if hasattr(payload.interaction_type, "value") else payload.interaction_type,
         now,
     )
 

@@ -174,6 +174,7 @@ class Activity(Base):
     price_indication = Column(String(255), nullable=True)
     scheduled_date = Column(Date, nullable=True)
     scheduled_time = Column(Time, nullable=True)
+    source = Column(String(100), nullable=True)  # conversation_update, manual, etc.
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # Relationships

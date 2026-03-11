@@ -19,6 +19,7 @@ class ActivityCreate(BaseModel):
     price_indication: Optional[str] = Field(None, max_length=255)
     scheduled_date: Optional[date] = None
     scheduled_time: Optional[time] = None
+    source: Optional[str] = Field(None, max_length=100, description="Source of the activity: conversation_update, manual, etc.")
 
 
 class ActivityQuickLog(BaseModel):
@@ -27,6 +28,7 @@ class ActivityQuickLog(BaseModel):
     interaction_type: InteractionType
     notes: Optional[str] = None
     is_meaningful: bool = True
+    source: Optional[str] = Field(None, max_length=100)
 
 
 class ActivityUpdate(BaseModel):
@@ -40,6 +42,7 @@ class ActivityUpdate(BaseModel):
     price_indication: Optional[str] = Field(None, max_length=255)
     scheduled_date: Optional[date] = None
     scheduled_time: Optional[time] = None
+    source: Optional[str] = Field(None, max_length=100)
 
 
 class ActivityResponse(BaseModel):
@@ -56,6 +59,7 @@ class ActivityResponse(BaseModel):
     price_indication: str | None = None
     scheduled_date: date | None = None
     scheduled_time: time | None = None
+    source: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -66,3 +70,11 @@ class ActivityWithPerson(ActivityResponse):
     person_first_name: str | None = None
     person_last_name: str | None = None
     person_phone: str | None = None
+
+
+class ScreenshotAnalysisResponse(BaseModel):
+    """Response from the conversation screenshot analysis endpoint."""
+    summary: str | None = None
+    participants: list[str] = []
+    property: str | None = None
+    datetime: str | None = None
