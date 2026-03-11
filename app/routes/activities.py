@@ -368,11 +368,13 @@ async def create_activity(
     # get_db will commit at the end of the request — no manual commit needed.
     await db.flush()
 
-    # Reload within the same session — flush makes the rows visible within this transaction.
+    # Reload within the same session — populate_existing forces SQLAlchemy to
+    # overwrite the identity-map cache so the freshly flushed activity_people rows appear.
     result = await db.execute(
         select(Activity)
         .options(selectinload(Activity.activity_people).selectinload(ActivityPerson.person))
         .where(Activity.id == activity.id)
+        .execution_options(populate_existing=True)
     )
     activity = result.scalar_one()
 
@@ -428,11 +430,13 @@ async def quick_log_activity(
     # get_db will commit at the end of the request.
     await db.flush()
 
-    # Reload within the same session — flushed rows are visible within this transaction.
+    # Reload within the same session — populate_existing forces SQLAlchemy to
+    # overwrite the identity-map cache so the freshly flushed activity_people rows appear.
     result = await db.execute(
         select(Activity)
         .options(selectinload(Activity.activity_people).selectinload(ActivityPerson.person))
         .where(Activity.id == activity.id)
+        .execution_options(populate_existing=True)
     )
     activity = result.scalar_one()
 
