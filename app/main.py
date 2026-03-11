@@ -24,6 +24,7 @@ from app.routes.rapport_anchors import person_router as rapport_person_router
 from app.routes.rapport_anchors import top_router as rapport_top_router
 from app.routes.relationship_summaries import person_router as summary_person_router
 from app.routes.relationship_summaries import top_router as summary_top_router
+from app.routes.open_homes import router as open_homes_router
 
 settings = get_settings()
 
@@ -103,6 +104,9 @@ app.include_router(rapport_top_router, prefix=API_PREFIX)           # /rapport-a
 # Relationship summaries
 app.include_router(summary_person_router, prefix=API_PREFIX)        # /people/{id}/relationship-summary
 app.include_router(summary_top_router, prefix=API_PREFIX)           # /relationship-summaries/{id}
+
+# Open homes
+app.include_router(open_homes_router, prefix=API_PREFIX)            # /open-homes/{id}/vendor-update
 
 
 @app.get("/", tags=["Health"])
