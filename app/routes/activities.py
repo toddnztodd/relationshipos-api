@@ -12,7 +12,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.database import get_db
+from app.database import get_db, async_session_factory
 from app.models.models import User, Person, Property, Activity, ActivityPerson, InteractionType
 from app.schemas.activity import (
     ActivityCreate,
@@ -364,19 +364,18 @@ async def create_activity(
 
     dashboard_cache.invalidate(current_user.id)
 
-    # Commit so activity_people rows are visible in the reload query
+    # Commit the transaction
     await db.commit()
 
-    # Expire the cached object so the reload fetches fresh data from DB
-    db.expire(activity)
-
-    # Reload with activity_people for response
-    result = await db.execute(
-        select(Activity)
-        .options(selectinload(Activity.activity_people).selectinload(ActivityPerson.person))
-        .where(Activity.id == activity.id)
-    )
-    activity = result.scalar_one()
+    # Use a fresh session to reload so activity_people rows are guaranteed visible
+    saved_id = activity.id
+    async with async_session_factory() as fresh_db:
+        result = await fresh_db.execute(
+            select(Activity)
+            .options(selectinload(Activity.activity_people).selectinload(ActivityPerson.person))
+            .where(Activity.id == saved_id)
+        )
+        activity = result.scalar_one()
 
     # Background tasks for all participants
     _trigger_background_tasks(activity, all_person_ids, current_user.id)
@@ -426,18 +425,18 @@ async def quick_log_activity(
 
     dashboard_cache.invalidate(current_user.id)
 
-    # Commit so activity_people rows are visible in the reload query
+    # Commit the transaction
     await db.commit()
 
-    # Expire the cached object so the reload fetches fresh data from DB
-    db.expire(activity)
-
-    result = await db.execute(
-        select(Activity)
-        .options(selectinload(Activity.activity_people).selectinload(ActivityPerson.person))
-        .where(Activity.id == activity.id)
-    )
-    activity = result.scalar_one()
+    # Use a fresh session to reload so activity_people rows are guaranteed visible
+    saved_id = activity.id
+    async with async_session_factory() as fresh_db:
+        result = await fresh_db.execute(
+            select(Activity)
+            .options(selectinload(Activity.activity_people).selectinload(ActivityPerson.person))
+            .where(Activity.id == saved_id)
+        )
+        activity = result.scalar_one()
 
     _trigger_background_tasks(activity, all_person_ids, current_user.id)
 
