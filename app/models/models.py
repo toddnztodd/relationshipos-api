@@ -194,7 +194,7 @@ class ActivityPerson(Base):
 
     # Relationships
     activity = relationship("Activity", back_populates="activity_people")
-    person = relationship("Person")
+    person = relationship("Person", lazy="selectin")
 
 
 class Activity(Base):
