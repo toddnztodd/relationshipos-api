@@ -142,6 +142,7 @@ class Person(Base):
     door_knock_sessions = relationship("DoorKnockSession", back_populates="person")
     rapport_anchors = relationship("RapportAnchor", back_populates="person", cascade="all, delete-orphan")
     relationship_summaries = relationship("RelationshipSummary", back_populates="person", cascade="all, delete-orphan")
+    suggested_outreach = relationship("SuggestedOutreach", back_populates="person", cascade="all, delete-orphan")
 
 
 class Property(Base):
@@ -428,4 +429,21 @@ class RelationshipSummary(Base):
 
     # Relationships
     person = relationship("Person", foreign_keys=[person_id], back_populates="relationship_summaries")
+    user = relationship("User", foreign_keys=[user_id])
+
+
+class SuggestedOutreach(Base):
+    """AI-generated suggested outreach messages for contacts."""
+    __tablename__ = "suggested_outreach"
+
+    id = Column(Integer, primary_key=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    person_id = Column(Integer, ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    message_text = Column(Text, nullable=False)
+    is_current = Column(Boolean, default=True)
+
+    # Relationships
+    person = relationship("Person", foreign_keys=[person_id], back_populates="suggested_outreach")
     user = relationship("User", foreign_keys=[user_id])

@@ -15,6 +15,11 @@ from app.models.models import (
     InteractionType,
     TierEnum,
     CadenceStatus,
+    RapportAnchor,
+    AnchorStatus,
+    RelationshipSummary,
+    SummaryStatus,
+    SuggestedOutreach,
 )
 from app.schemas.dashboard import (
     OpenHomeCheckin,
@@ -29,6 +34,9 @@ from app.schemas.dashboard import (
     TierBreakdown,
     AISuggestion,
     AISuggestionsResponse,
+    BriefingContact,
+    BriefingAnchor,
+    BriefingResponse,
 )
 from app.services.auth import get_current_user
 from app.services.cadence import (
@@ -449,3 +457,139 @@ async def get_dashboard_summary(
     Returns the same aggregated dashboard data.
     """
     return await get_dashboard(cadence_limit=cadence_limit, db=db, current_user=current_user)
+
+
+# ── Enriched Briefing ────────────────────────────────────────────────────────
+
+
+@router.get("/dashboard/briefing", response_model=BriefingResponse, tags=["Dashboard"])
+async def get_briefing(
+    limit: int = Query(20, ge=1, le=100, description="Max contacts to return"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Enriched Daily Relationship Briefing.
+
+    Returns contacts sorted by urgency (red → amber → green) with:
+    - relationship_summary: accepted summary text (or null)
+    - rapport_anchors: up to 2 accepted anchors
+    - suggested_outreach: current outreach message (or null)
+    """
+    uid = current_user.id
+    now = datetime.now(timezone.utc)
+
+    # ── 1. Fetch all people ──
+    people_result = await db.execute(
+        select(Person).where(Person.user_id == uid)
+    )
+    all_people = people_result.scalars().all()
+
+    if not all_people:
+        return BriefingResponse(contacts=[], total=0)
+
+    person_ids = [p.id for p in all_people]
+
+    # ── 2. Batch last meaningful interaction per person ──
+    last_meaningful_result = await db.execute(
+        select(
+            Activity.person_id,
+            func.max(Activity.date).label("last_date"),
+        )
+        .where(
+            Activity.user_id == uid,
+            Activity.is_meaningful == True,
+            Activity.person_id.in_(person_ids),
+        )
+        .group_by(Activity.person_id)
+    )
+    last_meaningful_map: dict[int, datetime | None] = {}
+    for row in last_meaningful_result.all():
+        last_meaningful_map[row[0]] = row[1]
+
+    # ── 3. Compute cadence for all people and sort by urgency ──
+    status_order = {"red": 0, "amber": 1, "green": 2}
+    scored_people = []
+    for person in all_people:
+        last_m = last_meaningful_map.get(person.id)
+        cadence_st, days_since = compute_cadence_status(person.tier, last_m, now)
+        scored_people.append((person, cadence_st, days_since))
+
+    scored_people.sort(
+        key=lambda x: (status_order.get(x[1].value, 3), -(x[2] or 0))
+    )
+
+    # Limit to requested count
+    top_people = scored_people[:limit]
+    top_person_ids = [p.id for p, _, _ in top_people]
+
+    # ── 4. Batch fetch accepted relationship summaries ──
+    summary_map: dict[int, str] = {}
+    if top_person_ids:
+        summary_result = await db.execute(
+            select(RelationshipSummary)
+            .where(
+                RelationshipSummary.user_id == uid,
+                RelationshipSummary.person_id.in_(top_person_ids),
+                RelationshipSummary.status == SummaryStatus.accepted,
+            )
+        )
+        for s in summary_result.scalars().all():
+            summary_map[s.person_id] = s.summary_text
+
+    # ── 5. Batch fetch accepted rapport anchors (up to 2 per person) ──
+    anchor_map: dict[int, list[BriefingAnchor]] = {}
+    if top_person_ids:
+        anchor_result = await db.execute(
+            select(RapportAnchor)
+            .where(
+                RapportAnchor.user_id == uid,
+                RapportAnchor.person_id.in_(top_person_ids),
+                RapportAnchor.status == AnchorStatus.accepted,
+            )
+            .order_by(RapportAnchor.created_at.desc())
+        )
+        for a in anchor_result.scalars().all():
+            lst = anchor_map.setdefault(a.person_id, [])
+            if len(lst) < 2:
+                lst.append(BriefingAnchor(
+                    id=a.id,
+                    anchor_text=a.anchor_text,
+                    anchor_type=a.anchor_type,
+                ))
+
+    # ── 6. Batch fetch current suggested outreach ──
+    outreach_map: dict[int, str] = {}
+    if top_person_ids:
+        outreach_result = await db.execute(
+            select(SuggestedOutreach)
+            .where(
+                SuggestedOutreach.user_id == uid,
+                SuggestedOutreach.person_id.in_(top_person_ids),
+                SuggestedOutreach.is_current == True,
+            )
+        )
+        for o in outreach_result.scalars().all():
+            outreach_map[o.person_id] = o.message_text
+
+    # ── 7. Build response ──
+    contacts = []
+    for person, cadence_st, days_since in top_people:
+        contacts.append(BriefingContact(
+            person_id=person.id,
+            first_name=person.first_name,
+            last_name=person.last_name,
+            phone=person.phone,
+            tier=person.tier.value if person.tier else "C",
+            cadence_status=cadence_st.value,
+            days_since_last_meaningful=days_since,
+            cadence_window_days=get_cadence_window(person.tier),
+            relationship_summary=summary_map.get(person.id),
+            rapport_anchors=anchor_map.get(person.id, []),
+            suggested_outreach=outreach_map.get(person.id),
+        ))
+
+    return BriefingResponse(
+        contacts=contacts,
+        total=len(all_people),
+    )

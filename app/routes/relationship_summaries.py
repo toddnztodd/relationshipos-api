@@ -142,6 +142,15 @@ async def update_relationship_summary(
 
     await db.flush()
     await db.refresh(summary)
+
+    # Trigger outreach generation when a summary is accepted
+    if summary.status == SummaryStatus.accepted and summary.person_id:
+        from app.services.outreach_generation import generate_outreach_background
+        asyncio.ensure_future(generate_outreach_background(
+            person_id=summary.person_id,
+            user_id=current_user.id,
+        ))
+
     return summary
 
 

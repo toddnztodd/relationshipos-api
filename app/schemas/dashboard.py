@@ -104,6 +104,34 @@ class DashboardResponse(BaseModel):
     cached: bool = False  # True if served from cache
 
 
+class BriefingAnchor(BaseModel):
+    id: int
+    anchor_text: str
+    anchor_type: str
+
+    model_config = {"from_attributes": True}
+
+
+class BriefingContact(BaseModel):
+    person_id: int
+    first_name: str
+    last_name: str | None
+    phone: str
+    tier: str
+    cadence_status: str
+    days_since_last_meaningful: int | None
+    cadence_window_days: int
+    relationship_summary: str | None = None
+    rapport_anchors: list[BriefingAnchor] = []
+    suggested_outreach: str | None = None
+
+
+class BriefingResponse(BaseModel):
+    contacts: list[BriefingContact]
+    total: int
+    cached: bool = False
+
+
 class AISuggestion(BaseModel):
     suggestion_type: str
     person_id: int | None = None

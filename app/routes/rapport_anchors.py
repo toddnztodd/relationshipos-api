@@ -143,10 +143,15 @@ async def update_rapport_anchor(
     await db.flush()
     await db.refresh(anchor)
 
-    # Trigger background summary generation when an anchor is accepted
+    # Trigger background summary + outreach generation when an anchor is accepted
     if anchor.status == AnchorStatus.accepted and anchor.person_id:
         from app.services.summary_generation import generate_summary_background
+        from app.services.outreach_generation import generate_outreach_background
         asyncio.ensure_future(generate_summary_background(
+            person_id=anchor.person_id,
+            user_id=current_user.id,
+        ))
+        asyncio.ensure_future(generate_outreach_background(
             person_id=anchor.person_id,
             user_id=current_user.id,
         ))
