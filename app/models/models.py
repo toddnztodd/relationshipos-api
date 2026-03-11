@@ -468,7 +468,7 @@ class SuggestedOutreach(Base):
     person = relationship("Person", foreign_keys=[person_id], back_populates="suggested_outreach")
     user = relationship("User", foreign_keys=[user_id])
 
-class ContextNodeType(str, PyEnum):
+class ContextNodeType(str, enum.Enum):
     community = "community"
     school = "school"
     sport = "sport"
@@ -478,7 +478,7 @@ class ContextNodeType(str, PyEnum):
     other = "other"
 
 
-class ContextSuggestionStatus(str, PyEnum):
+class ContextSuggestionStatus(str, enum.Enum):
     suggested = "suggested"
     accepted = "accepted"
     dismissed = "dismissed"

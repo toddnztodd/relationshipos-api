@@ -17,7 +17,7 @@ from app.schemas.context_node import (
     PersonContextNodesResponse, PropertyContextNodesResponse,
     ContextNodeSuggestionResponse, ContextNodeSuggestionUpdate,
 )
-from app.routes.auth import get_current_user
+from app.services.auth import get_current_user
 
 
 # ── Routers ───────────────────────────────────────────────────────────────────
