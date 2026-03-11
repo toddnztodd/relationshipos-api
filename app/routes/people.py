@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 from typing import Optional
 
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, func, case, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +21,7 @@ from app.schemas.person import (
 from app.services.auth import get_current_user
 from app.services.cadence import compute_cadence_status, get_cadence_window, CADENCE_WINDOWS
 from app.services import dashboard_cache
+from app.services.parse_voice import parse_voice_to_contact
 
 router = APIRouter(prefix="/people", tags=["People"])
 
@@ -82,6 +84,49 @@ async def _update_last_interaction(db: AsyncSession, person_id: int, interaction
         channel = INTERACTION_CHANNEL_MAP.get(interaction_type if isinstance(interaction_type, str) else interaction_type.value, "call")
         person.last_interaction_channel = channel
         await db.flush()
+
+
+# ── Voice-to-form contact parsing ────────────────────────────────────────────
+
+class ParseVoiceRequest(BaseModel):
+    transcription: str
+
+
+class ParseVoiceResponse(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    suburb: Optional[str] = None
+    tier: Optional[str] = None
+    tags: list[str] = []
+    notes: Optional[str] = None
+
+
+@router.post("/parse-voice", response_model=ParseVoiceResponse)
+async def parse_voice(
+    payload: ParseVoiceRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Extract structured contact fields from a voice transcription.
+
+    Accepts a free-form transcription (e.g. from a voice note recorded in the
+    field) and returns a structured object ready to pre-fill a contact creation
+    form. No contact is created — this is a parsing-only endpoint.
+    """
+    if not payload.transcription or not payload.transcription.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="transcription must not be empty",
+        )
+    try:
+        result = await parse_voice_to_contact(payload.transcription.strip())
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        )
+    return result
 
 
 @router.post("/", response_model=PersonResponse, status_code=status.HTTP_201_CREATED)
