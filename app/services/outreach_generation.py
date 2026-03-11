@@ -5,7 +5,8 @@ Triggered when:
 - A rapport anchor is accepted
 
 Uses accepted summary + accepted anchors + most recent interaction to generate
-a short, casual outreach message suitable for text/WhatsApp.
+a channel-aware outreach message. Tone is adjusted based on the contact's
+preferred_contact_channel field.
 """
 
 import logging
@@ -29,25 +30,80 @@ from app.models.models import (
 
 logger = logging.getLogger(__name__)
 
-_OUTREACH_PROMPT = """\
-You are a real-estate agent's assistant. Generate a short suggested outreach message \
-for the agent to send to a contact via text or WhatsApp.
+# ── Channel-specific system + user prompts ────────────────────────────────────
 
-Rules:
-- 1-2 sentences max
-- Natural, casual, mate-style tone (New Zealand / Australian style)
-- No formal "Hi [Name]" opener — jump straight in
-- Suitable for text/WhatsApp
-- Reference something specific from the relationship context below
-- Do NOT mention property prices or make promises
-- Do NOT use emojis excessively (one max, if natural)
+_SYSTEM_BASE = (
+    "You are a real-estate agent's assistant. "
+    "Generate a suggested outreach message for the agent to send to a contact. "
+    "Return ONLY the message text — no labels, no explanation, nothing else."
+)
 
-Examples of good messages:
-- "Saw this and thought of you 👍"
-- "Quick one — this popped up and feels like your sort of thing."
-- "Mate, thought this might be worth a look."
-- "Hey, how did the kids settle into the new school?"
-- "Just checking in — any updates on the lease situation?"
+_CHANNEL_RULES = {
+    "text": (
+        "Channel: TEXT MESSAGE\n"
+        "Rules:\n"
+        "- 1 sentence max, extremely short\n"
+        "- No greeting, no sign-off\n"
+        "- Casual, mate-style NZ tone\n"
+        "- Jump straight in\n"
+        "- Reference something specific from the context\n"
+        "Examples: 'Saw this and thought of you 👍' / "
+        "'Quick one — how did the school thing land?' / "
+        "'Mate, just checking in — any update on timing?'"
+    ),
+    "whatsapp": (
+        "Channel: WHATSAPP\n"
+        "Rules:\n"
+        "- 1-2 sentences, relaxed and conversational\n"
+        "- No formal greeting\n"
+        "- Casual, friendly NZ tone\n"
+        "- Can include one emoji if it feels natural\n"
+        "- Reference something specific from the context"
+    ),
+    "messenger": (
+        "Channel: FACEBOOK MESSENGER\n"
+        "Rules:\n"
+        "- 1-2 sentences, conversational\n"
+        "- No formal greeting\n"
+        "- Casual, friendly tone\n"
+        "- Reference something specific from the context"
+    ),
+    "email": (
+        "Channel: EMAIL\n"
+        "Rules:\n"
+        "- Include a warm greeting: 'Hi {contact_first_name},'\n"
+        "- Short paragraph (2-3 sentences)\n"
+        "- Warm but professional tone\n"
+        "- End with a soft call to action or open question\n"
+        "- Sign off with 'Cheers, [Agent]'\n"
+        "- Reference something specific from the context"
+    ),
+    "call": (
+        "Channel: PHONE CALL (talking point)\n"
+        "Rules:\n"
+        "- Generate a suggested talking point, NOT a message to send\n"
+        "- 1 sentence, starting with an action verb\n"
+        "- Should remind the agent what to bring up on the call\n"
+        "Examples: 'Check in about the school zones they mentioned last time.' / "
+        "'Ask how the lease situation is tracking — they were deciding in August.' / "
+        "'Follow up on whether the husband has had a chance to look at the numbers.'"
+    ),
+}
+
+_DEFAULT_RULES = (
+    "Channel: TEXT / WHATSAPP (default)\n"
+    "Rules:\n"
+    "- 1-2 sentences max\n"
+    "- Natural, casual, mate-style NZ tone\n"
+    "- No formal opener — jump straight in\n"
+    "- Reference something specific from the context\n"
+    "Examples: 'Saw this and thought of you 👍' / "
+    "'Quick one — this popped up and feels like your sort of thing.' / "
+    "'Mate, thought this might be worth a look.'"
+)
+
+_USER_PROMPT = """\
+{channel_rules}
 
 Contact name: {contact_name}
 
@@ -60,7 +116,7 @@ Key rapport anchors:
 Most recent interaction:
 {last_interaction}
 
-Generate the outreach message now. Return ONLY the message text, nothing else.
+Generate the outreach message (or talking point) now.
 """
 
 _client: Optional[AsyncOpenAI] = None
@@ -98,7 +154,7 @@ async def _generate_and_store(
 
     async with async_session_factory() as db:
         try:
-            # 1. Get person name
+            # 1. Get person name + preferred channel
             result = await db.execute(
                 select(Person).where(Person.id == person_id)
             )
@@ -108,6 +164,10 @@ async def _generate_and_store(
                 return
 
             contact_name = f"{person.first_name} {person.last_name or ''}".strip()
+            contact_first_name = person.first_name
+            preferred_channel = (
+                getattr(person, "preferred_contact_channel", None) or ""
+            ).strip().lower() or None
 
             # 2. Get accepted relationship summary
             result = await db.execute(
@@ -162,8 +222,14 @@ async def _generate_and_store(
                 else "(none)"
             )
 
-            # 5. Call OpenAI
-            prompt = _OUTREACH_PROMPT.format(
+            # 5. Select channel-specific rules
+            channel_rules = _CHANNEL_RULES.get(preferred_channel, _DEFAULT_RULES)
+            # Inject first name into email template if needed
+            channel_rules = channel_rules.replace("{contact_first_name}", contact_first_name)
+
+            # 6. Call OpenAI
+            prompt = _USER_PROMPT.format(
+                channel_rules=channel_rules,
                 contact_name=contact_name,
                 summary=summary_text,
                 anchors=anchors_text,
@@ -172,10 +238,10 @@ async def _generate_and_store(
 
             response = await client.chat.completions.create(
                 model="gpt-4o-mini",
-                max_tokens=150,
+                max_tokens=200,
                 temperature=0.7,
                 messages=[
-                    {"role": "system", "content": "You generate short, casual outreach messages for a real estate agent. Return only the message text."},
+                    {"role": "system", "content": _SYSTEM_BASE},
                     {"role": "user", "content": prompt},
                 ],
             )
@@ -185,7 +251,7 @@ async def _generate_and_store(
                 logger.warning("Empty outreach message generated for person %s", person_id)
                 return
 
-            # 6. Mark any existing current outreach as not current
+            # 7. Mark any existing current outreach as not current
             result = await db.execute(
                 select(SuggestedOutreach)
                 .where(
@@ -197,7 +263,7 @@ async def _generate_and_store(
             for old in result.scalars().all():
                 old.is_current = False
 
-            # 7. Store new outreach
+            # 8. Store new outreach
             outreach = SuggestedOutreach(
                 person_id=person_id,
                 user_id=user_id,
@@ -207,7 +273,11 @@ async def _generate_and_store(
             db.add(outreach)
             await db.commit()
 
-            logger.info("Generated outreach message for person %s", person_id)
+            logger.info(
+                "Generated outreach message for person %s (channel=%s)",
+                person_id,
+                preferred_channel or "default",
+            )
         except Exception:
             await db.rollback()
             raise
