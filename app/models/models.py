@@ -181,6 +181,22 @@ class Property(Base):
     checklist_items = relationship("ListingChecklistItem", back_populates="property", cascade="all, delete-orphan")
 
 
+class ActivityPerson(Base):
+    """Join table linking activities to multiple people."""
+    __tablename__ = "activity_people"
+    __table_args__ = (
+        UniqueConstraint("activity_id", "person_id", name="uq_activity_person"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    activity_id = Column(Integer, ForeignKey("activities.id", ondelete="CASCADE"), nullable=False, index=True)
+    person_id = Column(Integer, ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Relationships
+    activity = relationship("Activity", back_populates="activity_people")
+    person = relationship("Person")
+
+
 class Activity(Base):
     __tablename__ = "activities"
 
@@ -432,22 +448,6 @@ class RelationshipSummary(Base):
     # Relationships
     person = relationship("Person", foreign_keys=[person_id], back_populates="relationship_summaries")
     user = relationship("User", foreign_keys=[user_id])
-
-
-class ActivityPerson(Base):
-    """Join table linking activities to multiple people."""
-    __tablename__ = "activity_people"
-    __table_args__ = (
-        UniqueConstraint("activity_id", "person_id", name="uq_activity_person"),
-    )
-
-    id = Column(Integer, primary_key=True, index=True)
-    activity_id = Column(Integer, ForeignKey("activities.id", ondelete="CASCADE"), nullable=False, index=True)
-    person_id = Column(Integer, ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
-
-    # Relationships
-    activity = relationship("Activity", back_populates="activity_people")
-    person = relationship("Person")
 
 
 class SuggestedOutreach(Base):
