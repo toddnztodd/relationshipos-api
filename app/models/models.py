@@ -398,7 +398,7 @@ class RapportAnchor(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     anchor_text = Column(Text, nullable=False)
     anchor_type = Column(String(20), nullable=False, default="individual")  # individual | household
-    status = Column(Enum(AnchorStatus), nullable=False, default=AnchorStatus.suggested)
+    status = Column(Enum(AnchorStatus, name="anchor_status"), nullable=False, default=AnchorStatus.suggested)
 
     # Relationships
     person = relationship("Person", foreign_keys=[person_id], back_populates="rapport_anchors")
