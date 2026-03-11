@@ -72,6 +72,11 @@ class ActivityWithPerson(ActivityResponse):
     person_phone: str | None = None
 
 
+class TranscriptionResponse(BaseModel):
+    """Response from the voice transcription endpoint."""
+    transcription: str
+
+
 class ScreenshotAnalysisResponse(BaseModel):
     """Response from the conversation screenshot analysis endpoint."""
     summary: str | None = None

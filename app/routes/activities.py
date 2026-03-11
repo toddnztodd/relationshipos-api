@@ -18,6 +18,7 @@ from app.schemas.activity import (
     ActivityUpdate,
     ActivityResponse,
     ScreenshotAnalysisResponse,
+    TranscriptionResponse,
 )
 from app.services.auth import get_current_user
 from app.services import dashboard_cache
@@ -63,6 +64,74 @@ async def _validate_property(db: AsyncSession, property_id: int, user_id: int) -
     if not prop:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
     return prop
+
+
+# ── Voice Transcription ────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/transcribe",
+    response_model=TranscriptionResponse,
+    summary="Transcribe an audio recording with OpenAI Whisper",
+    description=(
+        "Upload an audio file (WebM, MP4, WAV, or M4A). "
+        "The audio is sent to OpenAI Whisper for speech-to-text transcription "
+        "and immediately discarded — it is never stored on disk or in the database. "
+        "Returns the transcription text."
+    ),
+)
+async def transcribe_audio(
+    audio: UploadFile = File(..., description="Audio file (WebM, MP4, WAV, or M4A)"),
+    current_user: User = Depends(get_current_user),
+):
+    """Transcribe an audio recording and return the text."""
+    # Validate content type
+    allowed_types = {
+        "audio/webm", "audio/mp4", "audio/wav", "audio/x-wav",
+        "audio/mpeg", "audio/m4a", "audio/x-m4a", "audio/mp4a-latm",
+        "video/webm", "video/mp4",  # browsers sometimes label audio-only WebM/MP4 as video/*
+    }
+    content_type = (audio.content_type or "").lower()
+    if content_type not in allowed_types:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unsupported audio type '{content_type}'. Allowed: WebM, MP4, WAV, M4A.",
+        )
+
+    # Read audio bytes (max 25 MB — Whisper API limit)
+    audio_bytes = await audio.read()
+    if len(audio_bytes) > 25 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Audio file must be smaller than 25 MB.",
+        )
+
+    # Determine a safe filename extension for the Whisper API
+    ext_map = {
+        "audio/webm": "webm", "video/webm": "webm",
+        "audio/mp4": "mp4", "video/mp4": "mp4",
+        "audio/wav": "wav", "audio/x-wav": "wav",
+        "audio/mpeg": "mp3",
+        "audio/m4a": "m4a", "audio/x-m4a": "m4a", "audio/mp4a-latm": "m4a",
+    }
+    ext = ext_map.get(content_type, "webm")
+    filename = f"voice_note.{ext}"
+
+    # Call OpenAI Whisper API
+    client = _get_openai_client()
+    try:
+        transcript = await client.audio.transcriptions.create(
+            model="whisper-1",
+            file=(filename, audio_bytes),
+            response_format="text",
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"OpenAI Whisper API error: {exc}",
+        )
+
+    return TranscriptionResponse(transcription=transcript.strip() if isinstance(transcript, str) else str(transcript).strip())
 
 
 # ── Screenshot Analysis ────────────────────────────────────────────────────────
