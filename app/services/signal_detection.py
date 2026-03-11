@@ -214,7 +214,7 @@ async def detect_buyer_matches(db: AsyncSession, user_id: int) -> int:
             reasons.append(f"Property sellability {prop.sellability}/5")
 
         person_result = await db.execute(
-            select(Person).where(Person.id == bi.person_id)
+            select(Person).where(Person.id == bi.person_id, Person.contact_status == "active")
         )
         person = person_result.scalar_one_or_none()
         person_name = f"{person.first_name} {person.last_name or ''}".strip() if person else "Unknown"
@@ -272,8 +272,10 @@ async def detect_vendor_pressure(db: AsyncSession, user_id: int) -> int:
             continue
 
         confidence = min(0.4 + 0.1 * len(matched_keywords), 0.9)
-        person_result = await db.execute(select(Person).where(Person.id == act.person_id))
+        person_result = await db.execute(select(Person).where(Person.id == act.person_id, Person.contact_status == "active"))
         person = person_result.scalar_one_or_none()
+        if not person:
+            continue
         person_name = f"{person.first_name} {person.last_name or ''}".strip() if person else "Unknown"
 
         # Determine source type
@@ -304,6 +306,7 @@ async def detect_relationship_cooling(db: AsyncSession, user_id: int) -> int:
         select(Person).where(
             Person.user_id == user_id,
             Person.tier.in_([TierEnum.A, TierEnum.B, TierEnum.C]),
+            Person.contact_status == "active",
         )
     )
     people = result.scalars().all()
@@ -391,6 +394,7 @@ async def detect_relationship_warming(db: AsyncSession, user_id: int) -> int:
         select(Person).where(
             Person.user_id == user_id,
             Person.id.in_(all_person_ids),
+            Person.contact_status == "active",
         )
     )
     people = {p.id: p for p in person_result.scalars().all()}

@@ -41,6 +41,8 @@ class InteractionType(str, enum.Enum):
     appraisal_note = "appraisal_note"
     conversation_update = "conversation_update"
     system_event = "system_event"
+    vault = "vault"
+    restore = "restore"
 
 
 class TierEnum(str, enum.Enum):
@@ -161,6 +163,11 @@ class Person(Base):
     preferred_contact_channel = Column(String(20), nullable=True)  # text | whatsapp | messenger | email | call
     last_interaction_at = Column(DateTime(timezone=True), nullable=True)
     last_interaction_channel = Column(String(50), nullable=True)  # call, text, whatsapp, email, messenger, linkedin
+    # Contact Vault fields
+    contact_status = Column(String(20), nullable=False, default="active")  # active | vaulted | private
+    vault_note = Column(Text, nullable=True)
+    vaulted_at = Column(DateTime(timezone=True), nullable=True)
+    original_source = Column(String(100), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

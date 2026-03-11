@@ -146,9 +146,9 @@ async def _build_dashboard(
     """Build the full dashboard response from database queries."""
     now = datetime.now(timezone.utc)
 
-    # ── QUERY 1: Fetch all people for this user ──
+    # ── QUERY 1: Fetch all people for this user (active only) ──
     people_result = await db.execute(
-        select(Person).where(Person.user_id == uid)
+        select(Person).where(Person.user_id == uid, Person.contact_status == "active")
     )
     all_people = people_result.scalars().all()
 
@@ -482,9 +482,9 @@ async def get_briefing(
     uid = current_user.id
     now = datetime.now(timezone.utc)
 
-    # ── 1. Fetch all people ──
+    # ── 1. Fetch all people (active only) ──
     people_result = await db.execute(
-        select(Person).where(Person.user_id == uid)
+        select(Person).where(Person.user_id == uid, Person.contact_status == "active")
     )
     all_people = people_result.scalars().all()
 

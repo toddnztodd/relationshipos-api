@@ -9,7 +9,7 @@ from sqlalchemy import select, func, case, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.models import User, Person, Activity, TierEnum
+from app.models.models import User, Person, Activity, TierEnum, InteractionType
 from app.schemas.person import (
     PersonCreate,
     PersonUpdate,
@@ -129,6 +129,234 @@ async def parse_voice(
     return result
 
 
+# ── Contact Vault endpoints ──────────────────────────────────────────────────
+
+
+class VaultRequest(BaseModel):
+    vault_note: Optional[str] = None
+
+
+class BulkVaultRequest(BaseModel):
+    ids: list[int]
+    vault_note: Optional[str] = None
+
+
+class BulkVaultResponse(BaseModel):
+    vaulted: int
+
+
+class CheckDuplicateRequest(BaseModel):
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    name: Optional[str] = None
+
+
+class CheckDuplicateResponse(BaseModel):
+    match: Optional[PersonResponse] = None
+    match_type: Optional[str] = None  # 'phone' | 'email' | 'name' | null
+
+
+async def _create_vault_activity(
+    db: AsyncSession, user_id: int, person_id: int,
+    interaction_type: InteractionType, notes: str,
+):
+    """Create an activity log entry for vault/restore actions."""
+    activity = Activity(
+        user_id=user_id,
+        person_id=person_id,
+        interaction_type=interaction_type,
+        notes=notes,
+        is_meaningful=False,
+        source="system",
+    )
+    db.add(activity)
+
+
+@router.patch("/{person_id}/vault", response_model=PersonResponse)
+async def vault_contact(
+    person_id: int,
+    payload: VaultRequest = VaultRequest(),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Move a contact to the vault."""
+    result = await db.execute(
+        select(Person).where(Person.id == person_id, Person.user_id == current_user.id)
+    )
+    person = result.scalar_one_or_none()
+    if not person:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found")
+
+    person.contact_status = "vaulted"
+    person.vaulted_at = datetime.now(timezone.utc)
+    if payload.vault_note:
+        person.vault_note = payload.vault_note
+
+    await _create_vault_activity(
+        db, current_user.id, person.id,
+        InteractionType.vault,
+        payload.vault_note or "Contact vaulted",
+    )
+
+    await db.flush()
+    await db.refresh(person)
+    dashboard_cache.invalidate(current_user.id)
+    return person
+
+
+@router.patch("/{person_id}/restore", response_model=PersonResponse)
+async def restore_contact(
+    person_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Restore a contact from the vault."""
+    result = await db.execute(
+        select(Person).where(Person.id == person_id, Person.user_id == current_user.id)
+    )
+    person = result.scalar_one_or_none()
+    if not person:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found")
+
+    person.contact_status = "active"
+    person.vaulted_at = None
+    person.vault_note = None
+
+    await _create_vault_activity(
+        db, current_user.id, person.id,
+        InteractionType.restore,
+        "Contact restored from vault",
+    )
+
+    await db.flush()
+    await db.refresh(person)
+    dashboard_cache.invalidate(current_user.id)
+    return person
+
+
+@router.patch("/{person_id}/make-private", response_model=PersonResponse)
+async def make_private(
+    person_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Mark a contact as private."""
+    result = await db.execute(
+        select(Person).where(Person.id == person_id, Person.user_id == current_user.id)
+    )
+    person = result.scalar_one_or_none()
+    if not person:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found")
+
+    person.contact_status = "private"
+    await db.flush()
+    await db.refresh(person)
+    dashboard_cache.invalidate(current_user.id)
+    return person
+
+
+@router.post("/bulk-vault", response_model=BulkVaultResponse)
+async def bulk_vault(
+    payload: BulkVaultRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Vault multiple contacts at once."""
+    result = await db.execute(
+        select(Person).where(
+            Person.id.in_(payload.ids),
+            Person.user_id == current_user.id,
+            Person.contact_status == "active",
+        )
+    )
+    people = result.scalars().all()
+    now = datetime.now(timezone.utc)
+    count = 0
+    for person in people:
+        person.contact_status = "vaulted"
+        person.vaulted_at = now
+        if payload.vault_note:
+            person.vault_note = payload.vault_note
+        await _create_vault_activity(
+            db, current_user.id, person.id,
+            InteractionType.vault,
+            payload.vault_note or "Contact vaulted (bulk)",
+        )
+        count += 1
+
+    await db.flush()
+    dashboard_cache.invalidate(current_user.id)
+    return BulkVaultResponse(vaulted=count)
+
+
+@router.get("/vaulted", response_model=list[PersonResponse])
+async def list_vaulted(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List all vaulted contacts."""
+    result = await db.execute(
+        select(Person).where(
+            Person.user_id == current_user.id,
+            Person.contact_status == "vaulted",
+        ).order_by(Person.vaulted_at.desc())
+    )
+    return result.scalars().all()
+
+
+@router.post("/check-duplicate", response_model=CheckDuplicateResponse)
+async def check_duplicate(
+    payload: CheckDuplicateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Check vaulted contacts for duplicate matches.
+
+    Priority: 1) phone exact match, 2) email exact match, 3) name similarity.
+    """
+    # 1. Phone exact match
+    if payload.phone:
+        result = await db.execute(
+            select(Person).where(
+                Person.user_id == current_user.id,
+                Person.contact_status == "vaulted",
+                Person.phone == payload.phone,
+            )
+        )
+        match = result.scalar_one_or_none()
+        if match:
+            return CheckDuplicateResponse(match=PersonResponse.model_validate(match), match_type="phone")
+
+    # 2. Email exact match
+    if payload.email:
+        result = await db.execute(
+            select(Person).where(
+                Person.user_id == current_user.id,
+                Person.contact_status == "vaulted",
+                Person.email == payload.email,
+            )
+        )
+        match = result.scalar_one_or_none()
+        if match:
+            return CheckDuplicateResponse(match=PersonResponse.model_validate(match), match_type="email")
+
+    # 3. Name similarity (case-insensitive contains)
+    if payload.name:
+        pattern = f"%{payload.name}%"
+        result = await db.execute(
+            select(Person).where(
+                Person.user_id == current_user.id,
+                Person.contact_status == "vaulted",
+                (Person.first_name.ilike(pattern)) | (Person.last_name.ilike(pattern)),
+            ).limit(1)
+        )
+        match = result.scalar_one_or_none()
+        if match:
+            return CheckDuplicateResponse(match=PersonResponse.model_validate(match), match_type="name")
+
+    return CheckDuplicateResponse(match=None, match_type=None)
+
+
 @router.post("/", response_model=PersonResponse, status_code=status.HTTP_201_CREATED)
 async def create_person(
     payload: PersonCreate,
@@ -201,7 +429,7 @@ async def next_best_contacts(
 
     query = (
         select(Person)
-        .where(Person.user_id == current_user.id)
+        .where(Person.user_id == current_user.id, Person.contact_status == "active")
         .order_by(
             health_priority.desc(),       # Overdue first
             tier_priority.asc(),          # A > B > C
@@ -241,6 +469,7 @@ async def list_people(
     suburb: Optional[str] = Query(None),
     is_relationship_asset: Optional[bool] = Query(None),
     search: Optional[str] = Query(None, description="Search first_name, last_name, or phone"),
+    include_status: Optional[str] = Query(None, description="Filter by contact_status: active (default), vaulted, private, or all"),
     sort_by: str = Query("created_at", regex="^(created_at|first_name|last_name|tier|influence_score|updated_at)$"),
     sort_order: str = Query("desc", regex="^(asc|desc)$"),
     skip: int = Query(0, ge=0),
@@ -250,11 +479,19 @@ async def list_people(
 ):
     """List people with optional filtering, sorting, and pagination.
 
-    Uses a single batch query to fetch last-activity dates for all people
-    at once — avoids N+1 queries that caused timeouts with large contact lists.
+    By default returns only active contacts. Use include_status=vaulted,
+    include_status=private, or include_status=all to see other statuses.
     """
     now = datetime.now(timezone.utc)
     query = select(Person).where(Person.user_id == current_user.id)
+
+    # Contact status filter — default to active only
+    if include_status == "all":
+        pass  # no filter
+    elif include_status in ("vaulted", "private"):
+        query = query.where(Person.contact_status == include_status)
+    else:
+        query = query.where(Person.contact_status == "active")
 
     if tier:
         query = query.where(Person.tier == tier)

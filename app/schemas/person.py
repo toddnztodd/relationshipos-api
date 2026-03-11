@@ -100,6 +100,10 @@ class PersonResponse(BaseModel):
     preferred_contact_channel: Optional[str] = None
     last_interaction_at: Optional[datetime] = None
     last_interaction_channel: Optional[str] = None
+    contact_status: str = "active"
+    vault_note: Optional[str] = None
+    vaulted_at: Optional[datetime] = None
+    original_source: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
