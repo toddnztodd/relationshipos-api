@@ -64,6 +64,7 @@ from app.routes.door_knock_v2 import (
     nearby_router as property_nearby_router,
 )
 from app.routes.match_engine import router as match_engine_router
+from app.routes.referrals import router as referrals_router
 
 settings = get_settings()
 
@@ -187,6 +188,9 @@ app.include_router(property_nearby_router, prefix=API_PREFIX)                # /
 
 # Buyer-Property Match Engine
 app.include_router(match_engine_router, prefix=API_PREFIX)                   # /match-engine/run, /buyers/{id}/matches, /properties/{id}/buyer-matches
+
+# Referral Programme
+app.include_router(referrals_router, prefix=API_PREFIX)                       # /people/{id}/register-referral-member, /referrals
 
 
 @app.get("/", tags=["Health"])

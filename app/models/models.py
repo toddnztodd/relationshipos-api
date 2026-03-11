@@ -170,6 +170,10 @@ class Person(Base):
     vault_note = Column(Text, nullable=True)
     vaulted_at = Column(DateTime(timezone=True), nullable=True)
     original_source = Column(String(100), nullable=True)
+    # Referral programme fields
+    referral_member = Column(Boolean, default=False, nullable=False)
+    referral_reward_amount = Column(Numeric(10, 2), default=250, nullable=False)
+    referral_email_sent_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -959,3 +963,27 @@ class FollowUpTask(Base):
     related_person = relationship("Person", foreign_keys=[related_person_id])
     related_session = relationship("DoorKnockSession", foreign_keys=[related_session_id])
 
+
+# ── Referral Programme ────────────────────────────────────────────────────────
+
+
+class Referral(Base):
+    """A referral relationship between two contacts."""
+    __tablename__ = "referrals"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    referrer_person_id = Column(Integer, ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
+    referred_person_id = Column(Integer, ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
+    referral_status = Column(String(30), nullable=False, default="registered")
+    reward_amount = Column(Numeric(10, 2), nullable=False, default=250)
+    reward_status = Column(String(20), nullable=False, default="none")
+    reward_paid_at = Column(DateTime(timezone=True), nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    referrer = relationship("Person", foreign_keys=[referrer_person_id])
+    referred = relationship("Person", foreign_keys=[referred_person_id])
