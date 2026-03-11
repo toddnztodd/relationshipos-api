@@ -9,7 +9,7 @@ from app.models.models import InteractionType
 
 
 class ActivityCreate(BaseModel):
-    person_id: int
+    person_id: Optional[int] = None
     property_id: Optional[int] = None
     interaction_type: InteractionType
     date: Optional[datetime] = None  # defaults to now on server
@@ -24,7 +24,7 @@ class ActivityCreate(BaseModel):
 
 class ActivityQuickLog(BaseModel):
     """Optimised for speed — minimal fields for fast mobile logging."""
-    person_id: int
+    person_id: Optional[int] = None
     interaction_type: InteractionType
     notes: Optional[str] = None
     is_meaningful: bool = True
@@ -48,7 +48,7 @@ class ActivityUpdate(BaseModel):
 class ActivityResponse(BaseModel):
     id: int
     user_id: int
-    person_id: int
+    person_id: int | None
     property_id: int | None
     interaction_type: InteractionType
     date: datetime

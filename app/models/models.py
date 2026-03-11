@@ -35,6 +35,12 @@ class InteractionType(str, enum.Enum):
     door_knock = "door_knock"
     coffee_meeting = "coffee_meeting"
     email_conversation = "email_conversation"
+    # New activity types for voice capture and structured notes
+    voice_note = "voice_note"
+    meeting_note = "meeting_note"
+    appraisal_note = "appraisal_note"
+    conversation_update = "conversation_update"
+    system_event = "system_event"
 
 
 class TierEnum(str, enum.Enum):
@@ -107,6 +113,7 @@ class Person(Base):
     buyer_interest = Column(Integer, nullable=True)
     seller_likelihood = Column(Integer, nullable=True)
     nickname = Column(String(255), nullable=True)
+    relationship_group_id = Column(Integer, nullable=True, index=True)  # shared household/group identifier
     last_interaction_at = Column(DateTime(timezone=True), nullable=True)
     last_interaction_channel = Column(String(50), nullable=True)  # call, text, whatsapp, email, messenger, linkedin
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -163,7 +170,7 @@ class Activity(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    person_id = Column(Integer, ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
+    person_id = Column(Integer, ForeignKey("people.id", ondelete="SET NULL"), nullable=True, index=True)
     property_id = Column(Integer, ForeignKey("properties.id", ondelete="SET NULL"), nullable=True, index=True)
     interaction_type = Column(Enum(InteractionType), nullable=False)
     date = Column(DateTime(timezone=True), nullable=False, server_default=func.now())

@@ -182,7 +182,8 @@ async def create_activity(
     current_user: User = Depends(get_current_user),
 ):
     """Create a new activity/interaction record."""
-    await _validate_person(db, payload.person_id, current_user.id)
+    if payload.person_id:
+        await _validate_person(db, payload.person_id, current_user.id)
     if payload.property_id:
         await _validate_property(db, payload.property_id, current_user.id)
 
@@ -201,12 +202,13 @@ async def create_activity(
     await db.flush()
     await db.refresh(activity)
 
-    # Update last_interaction on the contact
-    await _update_last_interaction(
-        db, payload.person_id,
-        payload.interaction_type.value if hasattr(payload.interaction_type, "value") else payload.interaction_type,
-        activity_date,
-    )
+    # Update last_interaction on the contact (only if a person is linked)
+    if payload.person_id:
+        await _update_last_interaction(
+            db, payload.person_id,
+            payload.interaction_type.value if hasattr(payload.interaction_type, "value") else payload.interaction_type,
+            activity_date,
+        )
 
     dashboard_cache.invalidate(current_user.id)
     return activity
@@ -219,7 +221,8 @@ async def quick_log_activity(
     current_user: User = Depends(get_current_user),
 ):
     """Quick-log an interaction — optimised for speed (< 10 seconds on mobile)."""
-    await _validate_person(db, payload.person_id, current_user.id)
+    if payload.person_id:
+        await _validate_person(db, payload.person_id, current_user.id)
 
     now = datetime.now(timezone.utc)
     activity = Activity(
@@ -235,12 +238,13 @@ async def quick_log_activity(
     await db.flush()
     await db.refresh(activity)
 
-    # Update last_interaction on the contact
-    await _update_last_interaction(
-        db, payload.person_id,
-        payload.interaction_type.value if hasattr(payload.interaction_type, "value") else payload.interaction_type,
-        now,
-    )
+    # Update last_interaction on the contact (only if a person is linked)
+    if payload.person_id:
+        await _update_last_interaction(
+            db, payload.person_id,
+            payload.interaction_type.value if hasattr(payload.interaction_type, "value") else payload.interaction_type,
+            now,
+        )
 
     dashboard_cache.invalidate(current_user.id)
     return activity
