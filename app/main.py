@@ -31,6 +31,11 @@ from app.routes.context_nodes import (
     property_router as context_property_router,
     suggestion_router as context_suggestion_router,
 )
+from app.routes.community_entities import (
+    router as community_entities_router,
+    people_router as ce_people_router,
+    properties_router as ce_properties_router,
+)
 
 settings = get_settings()
 
@@ -119,6 +124,11 @@ app.include_router(context_nodes_router, prefix=API_PREFIX)         # /context-n
 app.include_router(context_person_router, prefix=API_PREFIX)        # /people/{id}/context-nodes
 app.include_router(context_property_router, prefix=API_PREFIX)      # /properties/{id}/context-nodes
 app.include_router(context_suggestion_router, prefix=API_PREFIX)    # /context-node-suggestions/{id}
+
+# Community entities
+app.include_router(community_entities_router, prefix=API_PREFIX)    # /community-entities/
+app.include_router(ce_people_router, prefix=API_PREFIX)             # /people/{id}/community-entities
+app.include_router(ce_properties_router, prefix=API_PREFIX)         # /properties/{id}/community-entities
 
 
 @app.get("/", tags=["Health"])

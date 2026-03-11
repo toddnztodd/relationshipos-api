@@ -28,6 +28,8 @@ from app.models.models import (
     SuggestedOutreach,
     PersonContextNode,
     ContextNode,
+    CommunityEntity,
+    CommunityEntityPerson,
 )
 
 logger = logging.getLogger(__name__)
@@ -117,6 +119,9 @@ Key rapport anchors:
 
 Context nodes (communities, schools, sports, etc.):
 {context_nodes}
+
+Community entities (organisations, clubs, businesses):
+{community_entities}
 
 Most recent interaction:
 {last_interaction}
@@ -222,8 +227,25 @@ async def _generate_and_store(
                         f"{n.name} ({n.type.value})" for n in nodes
                     )
 
+            # 4b. Get community entities for this person (up to 2)
+            ce_result = await db.execute(
+                select(CommunityEntity)
+                .join(CommunityEntityPerson, CommunityEntityPerson.community_entity_id == CommunityEntity.id)
+                .where(
+                    CommunityEntityPerson.person_id == person_id,
+                    CommunityEntity.user_id == user_id,
+                )
+                .limit(2)
+            )
+            community_entities_list = ce_result.scalars().all()
+            community_entities_text = "(none)"
+            if community_entities_list:
+                community_entities_text = ", ".join(
+                    f"{ce.name} ({ce.type.value})" for ce in community_entities_list
+                )
+
             # Fallback: if no summary and no anchors and no context nodes, skip
-            if summary_text == "(none)" and anchors_text == "(none)" and context_nodes_text == "(none)":
+            if summary_text == "(none)" and anchors_text == "(none)" and context_nodes_text == "(none)" and community_entities_text == "(none)":
                 logger.info("No material for outreach generation for person %s", person_id)
                 return
 
@@ -258,6 +280,7 @@ async def _generate_and_store(
                 summary=summary_text,
                 anchors=anchors_text,
                 context_nodes=context_nodes_text,
+                community_entities=community_entities_text,
                 last_interaction=last_interaction,
             )
 

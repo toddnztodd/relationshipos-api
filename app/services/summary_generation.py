@@ -28,6 +28,8 @@ from app.models.models import (
     SummaryStatus,
     PersonContextNode,
     ContextNode,
+    CommunityEntity,
+    CommunityEntityPerson,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,6 +52,9 @@ Accepted rapport anchors:
 
 Context nodes (communities, schools, sports, etc.):
 {context_nodes}
+
+Community entities (organisations, clubs, businesses):
+{community_entities}
 
 Recent voice note transcriptions:
 {voice_notes}
@@ -152,6 +157,24 @@ async def _generate_and_store(
                         f"- [{n.type.value}] {n.name}" for n in nodes
                     )
 
+            # 3b. Get community entities for this person (up to 2)
+            ce_result = await db.execute(
+                select(CommunityEntity)
+                .join(CommunityEntityPerson, CommunityEntityPerson.community_entity_id == CommunityEntity.id)
+                .where(
+                    CommunityEntityPerson.person_id == person_id,
+                    CommunityEntity.user_id == user_id,
+                )
+                .limit(2)
+            )
+            community_entities = ce_result.scalars().all()
+            community_entities_text = "(none)"
+            if community_entities:
+                community_entities_text = "\n".join(
+                    f"- [{ce.type.value}] {ce.name}" + (f" ({ce.location})" if ce.location else "")
+                    for ce in community_entities
+                )
+
             # 4. Get last 5 voice_note activities (via legacy + join table)
             result = await db.execute(
                 select(Activity)
@@ -188,7 +211,7 @@ async def _generate_and_store(
             ) if interactions else "(none)"
 
             # 6. Check if there's enough material to generate a summary
-            if anchors_text == "(none)" and voice_notes_text == "(none)" and interactions_text == "(none)" and context_nodes_text == "(none)":
+            if anchors_text == "(none)" and voice_notes_text == "(none)" and interactions_text == "(none)" and context_nodes_text == "(none)" and community_entities_text == "(none)":
                 logger.info("No material for summary generation for person %s", person_id)
                 return
 
@@ -197,6 +220,7 @@ async def _generate_and_store(
                 contact_name=contact_name,
                 anchors=anchors_text,
                 context_nodes=context_nodes_text,
+                community_entities=community_entities_text,
                 voice_notes=voice_notes_text,
                 interactions=interactions_text,
             )

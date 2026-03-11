@@ -559,3 +559,85 @@ class ContextNodeSuggestion(Base):
     person = relationship("Person", foreign_keys=[person_id])
     activity = relationship("Activity", foreign_keys=[activity_id])
     user = relationship("User", foreign_keys=[user_id])
+
+
+# ── Community Entities ─────────────────────────────────────────────────────────
+
+
+class CommunityEntityType(str, enum.Enum):
+    business = "business"
+    school = "school"
+    sport_club = "sport_club"
+    community_group = "community_group"
+    charity = "charity"
+    event_partner = "event_partner"
+    other = "other"
+
+
+class CommunityEntity(Base):
+    """A real-world organisation that acts as a relationship hub."""
+    __tablename__ = "community_entities"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(Text, nullable=False)
+    type = Column(Enum(CommunityEntityType, name="community_entity_type"), nullable=False, default=CommunityEntityType.other)
+    location = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    people_links = relationship("CommunityEntityPerson", back_populates="community_entity", cascade="all, delete-orphan", lazy="selectin")
+    property_links = relationship("CommunityEntityProperty", back_populates="community_entity", cascade="all, delete-orphan", lazy="selectin")
+    activity_links = relationship("CommunityEntityActivity", back_populates="community_entity", cascade="all, delete-orphan", lazy="selectin")
+
+
+class CommunityEntityPerson(Base):
+    """Links a person to a community entity with an optional role."""
+    __tablename__ = "community_entity_people"
+
+    id = Column(Integer, primary_key=True, index=True)
+    community_entity_id = Column(Integer, ForeignKey("community_entities.id", ondelete="CASCADE"), nullable=False, index=True)
+    person_id = Column(Integer, ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
+    role = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (UniqueConstraint("community_entity_id", "person_id", name="uq_ce_person"),)
+
+    # Relationships
+    community_entity = relationship("CommunityEntity", back_populates="people_links")
+    person = relationship("Person", lazy="selectin")
+
+
+class CommunityEntityProperty(Base):
+    """Links a property to a community entity."""
+    __tablename__ = "community_entity_properties"
+
+    id = Column(Integer, primary_key=True, index=True)
+    community_entity_id = Column(Integer, ForeignKey("community_entities.id", ondelete="CASCADE"), nullable=False, index=True)
+    property_id = Column(Integer, ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (UniqueConstraint("community_entity_id", "property_id", name="uq_ce_property"),)
+
+    # Relationships
+    community_entity = relationship("CommunityEntity", back_populates="property_links")
+    property = relationship("Property", lazy="selectin")
+
+
+class CommunityEntityActivity(Base):
+    """Links an activity to a community entity."""
+    __tablename__ = "community_entity_activities"
+
+    id = Column(Integer, primary_key=True, index=True)
+    community_entity_id = Column(Integer, ForeignKey("community_entities.id", ondelete="CASCADE"), nullable=False, index=True)
+    activity_id = Column(Integer, ForeignKey("activities.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (UniqueConstraint("community_entity_id", "activity_id", name="uq_ce_activity"),)
+
+    # Relationships
+    community_entity = relationship("CommunityEntity", back_populates="activity_links")
+    activity = relationship("Activity", lazy="selectin")
