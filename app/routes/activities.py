@@ -364,18 +364,17 @@ async def create_activity(
 
     dashboard_cache.invalidate(current_user.id)
 
-    # Commit the transaction
-    await db.commit()
+    # Flush all pending writes (activity + activity_people) within the current transaction.
+    # get_db will commit at the end of the request — no manual commit needed.
+    await db.flush()
 
-    # Use a fresh session to reload so activity_people rows are guaranteed visible
-    saved_id = activity.id
-    async with async_session_factory() as fresh_db:
-        result = await fresh_db.execute(
-            select(Activity)
-            .options(selectinload(Activity.activity_people).selectinload(ActivityPerson.person))
-            .where(Activity.id == saved_id)
-        )
-        activity = result.scalar_one()
+    # Reload within the same session — flush makes the rows visible within this transaction.
+    result = await db.execute(
+        select(Activity)
+        .options(selectinload(Activity.activity_people).selectinload(ActivityPerson.person))
+        .where(Activity.id == activity.id)
+    )
+    activity = result.scalar_one()
 
     # Background tasks for all participants
     _trigger_background_tasks(activity, all_person_ids, current_user.id)
@@ -425,18 +424,17 @@ async def quick_log_activity(
 
     dashboard_cache.invalidate(current_user.id)
 
-    # Commit the transaction
-    await db.commit()
+    # Flush all pending writes within the current transaction.
+    # get_db will commit at the end of the request.
+    await db.flush()
 
-    # Use a fresh session to reload so activity_people rows are guaranteed visible
-    saved_id = activity.id
-    async with async_session_factory() as fresh_db:
-        result = await fresh_db.execute(
-            select(Activity)
-            .options(selectinload(Activity.activity_people).selectinload(ActivityPerson.person))
-            .where(Activity.id == saved_id)
-        )
-        activity = result.scalar_one()
+    # Reload within the same session — flushed rows are visible within this transaction.
+    result = await db.execute(
+        select(Activity)
+        .options(selectinload(Activity.activity_people).selectinload(ActivityPerson.person))
+        .where(Activity.id == activity.id)
+    )
+    activity = result.scalar_one()
 
     _trigger_background_tasks(activity, all_person_ids, current_user.id)
 
