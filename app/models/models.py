@@ -67,6 +67,22 @@ class SummaryStatus(str, enum.Enum):
     dismissed = "dismissed"
 
 
+class ListingResultType(str, enum.Enum):
+    sold = "sold"
+    withdrawn = "withdrawn"
+    expired = "expired"
+    private_sale = "private_sale"
+    unknown = "unknown"
+
+
+class BuyerInterestStage(str, enum.Enum):
+    seen = "seen"
+    interested = "interested"
+    hot = "hot"
+    offer = "offer"
+    purchased = "purchased"
+
+
 # ── Models ─────────────────────────────────────────────────────────────────────
 
 
@@ -579,22 +595,6 @@ class ContextNodeSuggestion(Base):
 
 
 # ── Community Entities ─────────────────────────────────────────────────────────
-
-
-class ListingResultType(str, enum.Enum):
-    sold = "sold"
-    withdrawn = "withdrawn"
-    expired = "expired"
-    private_sale = "private_sale"
-    unknown = "unknown"
-
-
-class BuyerInterestStage(str, enum.Enum):
-    seen = "seen"
-    interested = "interested"
-    hot = "hot"
-    offer = "offer"
-    purchased = "purchased"
 
 
 class CommunityEntityType(str, enum.Enum):
