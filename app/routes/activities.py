@@ -8,16 +8,18 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from openai import AsyncOpenAI
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.models.models import User, Person, Property, Activity, InteractionType
+from app.models.models import User, Person, Property, Activity, ActivityPerson, InteractionType
 from app.schemas.activity import (
     ActivityCreate,
     ActivityQuickLog,
     ActivityUpdate,
     ActivityResponse,
+    ParticipantInfo,
     ScreenshotAnalysisResponse,
     TranscriptionResponse,
 )
@@ -67,6 +69,84 @@ async def _validate_property(db: AsyncSession, property_id: int, user_id: int) -
     return prop
 
 
+def _resolve_people_ids(person_id: Optional[int], people_ids: Optional[list[int]]) -> list[int]:
+    """Merge person_id and people_ids into a deduplicated list."""
+    ids: set[int] = set()
+    if people_ids:
+        ids.update(people_ids)
+    if person_id:
+        ids.add(person_id)
+    return sorted(ids)
+
+
+async def _create_activity_people(db: AsyncSession, activity_id: int, person_ids: list[int]) -> None:
+    """Insert activity_people join records for each person."""
+    for pid in person_ids:
+        db.add(ActivityPerson(activity_id=activity_id, person_id=pid))
+    await db.flush()
+
+
+def _activity_to_response(activity: Activity) -> dict:
+    """Convert an Activity ORM object to a dict with participants."""
+    participants = []
+    if activity.activity_people:
+        for ap in activity.activity_people:
+            if ap.person:
+                participants.append(ParticipantInfo(
+                    id=ap.person.id,
+                    first_name=ap.person.first_name,
+                    last_name=ap.person.last_name,
+                ))
+    return {
+        "id": activity.id,
+        "user_id": activity.user_id,
+        "person_id": activity.person_id,
+        "property_id": activity.property_id,
+        "interaction_type": activity.interaction_type,
+        "date": activity.date,
+        "notes": activity.notes,
+        "is_meaningful": activity.is_meaningful,
+        "due_date": activity.due_date,
+        "feedback": activity.feedback,
+        "price_indication": activity.price_indication,
+        "scheduled_date": activity.scheduled_date,
+        "scheduled_time": activity.scheduled_time,
+        "source": activity.source,
+        "created_at": activity.created_at,
+        "participants": participants,
+    }
+
+
+def _trigger_background_tasks(activity: Activity, all_person_ids: list[int], user_id: int):
+    """Fire background anchor extraction and summary generation for voice_note activities."""
+    if activity.interaction_type != InteractionType.voice_note or not activity.notes:
+        return
+
+    from app.services.anchor_extraction import extract_anchors_background
+    from app.services.summary_generation import generate_summary_background
+
+    for pid in all_person_ids:
+        asyncio.ensure_future(extract_anchors_background(
+            activity_id=activity.id,
+            user_id=user_id,
+            person_id=pid,
+            transcription=activity.notes,
+        ))
+        asyncio.ensure_future(generate_summary_background(
+            person_id=pid,
+            user_id=user_id,
+        ))
+
+    # Also fire for person_id=None case (property-only voice note)
+    if not all_person_ids:
+        asyncio.ensure_future(extract_anchors_background(
+            activity_id=activity.id,
+            user_id=user_id,
+            person_id=None,
+            transcription=activity.notes,
+        ))
+
+
 # ── Voice Transcription ────────────────────────────────────────────────────────
 
 
@@ -86,11 +166,10 @@ async def transcribe_audio(
     current_user: User = Depends(get_current_user),
 ):
     """Transcribe an audio recording and return the text."""
-    # Validate content type
     allowed_types = {
         "audio/webm", "audio/mp4", "audio/wav", "audio/x-wav",
         "audio/mpeg", "audio/m4a", "audio/x-m4a", "audio/mp4a-latm",
-        "video/webm", "video/mp4",  # browsers sometimes label audio-only WebM/MP4 as video/*
+        "video/webm", "video/mp4",
     }
     content_type = (audio.content_type or "").lower()
     if content_type not in allowed_types:
@@ -99,7 +178,6 @@ async def transcribe_audio(
             detail=f"Unsupported audio type '{content_type}'. Allowed: WebM, MP4, WAV, M4A.",
         )
 
-    # Read audio bytes (max 25 MB — Whisper API limit)
     audio_bytes = await audio.read()
     if len(audio_bytes) > 25 * 1024 * 1024:
         raise HTTPException(
@@ -107,7 +185,6 @@ async def transcribe_audio(
             detail="Audio file must be smaller than 25 MB.",
         )
 
-    # Determine a safe filename extension for the Whisper API
     ext_map = {
         "audio/webm": "webm", "video/webm": "webm",
         "audio/mp4": "mp4", "video/mp4": "mp4",
@@ -118,7 +195,6 @@ async def transcribe_audio(
     ext = ext_map.get(content_type, "webm")
     filename = f"voice_note.{ext}"
 
-    # Call OpenAI Whisper API
     client = _get_openai_client()
     try:
         transcript = await client.audio.transcriptions.create(
@@ -170,7 +246,6 @@ async def analyze_screenshot(
     current_user: User = Depends(get_current_user),
 ):
     """Analyse a conversation screenshot and return structured data."""
-    # Validate content type
     allowed_types = {"image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"}
     content_type = (image.content_type or "").lower()
     if content_type not in allowed_types:
@@ -179,7 +254,6 @@ async def analyze_screenshot(
             detail=f"Unsupported image type '{content_type}'. Allowed: JPEG, PNG, WEBP, GIF.",
         )
 
-    # Read image bytes (max 20 MB guard)
     image_bytes = await image.read()
     if len(image_bytes) > 20 * 1024 * 1024:
         raise HTTPException(
@@ -187,11 +261,9 @@ async def analyze_screenshot(
             detail="Image must be smaller than 20 MB.",
         )
 
-    # Encode to base64 data URL for OpenAI Vision
     b64_image = base64.b64encode(image_bytes).decode("utf-8")
     data_url = f"data:{content_type};base64,{b64_image}"
 
-    # Call OpenAI Vision API
     client = _get_openai_client()
     try:
         response = await client.chat.completions.create(
@@ -213,20 +285,17 @@ async def analyze_screenshot(
             detail=f"OpenAI Vision API error: {exc}",
         )
 
-    # Parse the JSON response
     raw_text = (response.choices[0].message.content or "").strip()
 
     import json
 
     try:
-        # Strip markdown code fences if model wraps the JSON
         if raw_text.startswith("```"):
             raw_text = raw_text.split("```")[1]
             if raw_text.startswith("json"):
                 raw_text = raw_text[4:]
         parsed = json.loads(raw_text)
     except json.JSONDecodeError:
-        # Return best-effort partial result
         return ScreenshotAnalysisResponse(
             summary=raw_text[:500] if raw_text else None,
             participants=[],
@@ -252,15 +321,24 @@ async def create_activity(
     current_user: User = Depends(get_current_user),
 ):
     """Create a new activity/interaction record."""
-    if payload.person_id:
-        await _validate_person(db, payload.person_id, current_user.id)
+    # Resolve all person IDs (merge person_id + people_ids)
+    all_person_ids = _resolve_people_ids(payload.person_id, payload.people_ids)
+
+    # Validate all people belong to user
+    for pid in all_person_ids:
+        await _validate_person(db, pid, current_user.id)
     if payload.property_id:
         await _validate_property(db, payload.property_id, current_user.id)
+
+    # Set person_id for backward compatibility: first person or explicit person_id
+    compat_person_id = payload.person_id
+    if not compat_person_id and len(all_person_ids) == 1:
+        compat_person_id = all_person_ids[0]
 
     activity_date = payload.date or datetime.now(timezone.utc)
     activity = Activity(
         user_id=current_user.id,
-        person_id=payload.person_id,
+        person_id=compat_person_id,
         property_id=payload.property_id,
         interaction_type=payload.interaction_type,
         date=activity_date,
@@ -272,34 +350,32 @@ async def create_activity(
     await db.flush()
     await db.refresh(activity)
 
-    # Update last_interaction on the contact (only if a person is linked)
-    if payload.person_id:
+    # Create activity_people join records
+    if all_person_ids:
+        await _create_activity_people(db, activity.id, all_person_ids)
+
+    # Update last_interaction on all linked contacts
+    for pid in all_person_ids:
         await _update_last_interaction(
-            db, payload.person_id,
+            db, pid,
             payload.interaction_type.value if hasattr(payload.interaction_type, "value") else payload.interaction_type,
             activity_date,
         )
 
     dashboard_cache.invalidate(current_user.id)
 
-    # Background anchor extraction for voice_note activities
-    if payload.interaction_type == InteractionType.voice_note and payload.notes:
-        from app.services.anchor_extraction import extract_anchors_background
-        asyncio.ensure_future(extract_anchors_background(
-            activity_id=activity.id,
-            user_id=current_user.id,
-            person_id=payload.person_id,
-            transcription=payload.notes,
-        ))
-        # Also trigger summary generation if linked to a person
-        if payload.person_id:
-            from app.services.summary_generation import generate_summary_background
-            asyncio.ensure_future(generate_summary_background(
-                person_id=payload.person_id,
-                user_id=current_user.id,
-            ))
+    # Reload with activity_people for response
+    result = await db.execute(
+        select(Activity)
+        .options(selectinload(Activity.activity_people).selectinload(ActivityPerson.person))
+        .where(Activity.id == activity.id)
+    )
+    activity = result.scalar_one()
 
-    return activity
+    # Background tasks for all participants
+    _trigger_background_tasks(activity, all_person_ids, current_user.id)
+
+    return _activity_to_response(activity)
 
 
 @router.post("/quick-log", response_model=ActivityResponse, status_code=status.HTTP_201_CREATED)
@@ -309,13 +385,19 @@ async def quick_log_activity(
     current_user: User = Depends(get_current_user),
 ):
     """Quick-log an interaction — optimised for speed (< 10 seconds on mobile)."""
-    if payload.person_id:
-        await _validate_person(db, payload.person_id, current_user.id)
+    all_person_ids = _resolve_people_ids(payload.person_id, payload.people_ids)
+
+    for pid in all_person_ids:
+        await _validate_person(db, pid, current_user.id)
+
+    compat_person_id = payload.person_id
+    if not compat_person_id and len(all_person_ids) == 1:
+        compat_person_id = all_person_ids[0]
 
     now = datetime.now(timezone.utc)
     activity = Activity(
         user_id=current_user.id,
-        person_id=payload.person_id,
+        person_id=compat_person_id,
         interaction_type=payload.interaction_type,
         date=now,
         notes=payload.notes,
@@ -326,34 +408,28 @@ async def quick_log_activity(
     await db.flush()
     await db.refresh(activity)
 
-    # Update last_interaction on the contact (only if a person is linked)
-    if payload.person_id:
+    if all_person_ids:
+        await _create_activity_people(db, activity.id, all_person_ids)
+
+    for pid in all_person_ids:
         await _update_last_interaction(
-            db, payload.person_id,
+            db, pid,
             payload.interaction_type.value if hasattr(payload.interaction_type, "value") else payload.interaction_type,
             now,
         )
 
     dashboard_cache.invalidate(current_user.id)
 
-    # Background anchor extraction for voice_note activities
-    if payload.interaction_type == InteractionType.voice_note and payload.notes:
-        from app.services.anchor_extraction import extract_anchors_background
-        asyncio.ensure_future(extract_anchors_background(
-            activity_id=activity.id,
-            user_id=current_user.id,
-            person_id=payload.person_id,
-            transcription=payload.notes,
-        ))
-        # Also trigger summary generation if linked to a person
-        if payload.person_id:
-            from app.services.summary_generation import generate_summary_background
-            asyncio.ensure_future(generate_summary_background(
-                person_id=payload.person_id,
-                user_id=current_user.id,
-            ))
+    result = await db.execute(
+        select(Activity)
+        .options(selectinload(Activity.activity_people).selectinload(ActivityPerson.person))
+        .where(Activity.id == activity.id)
+    )
+    activity = result.scalar_one()
 
-    return activity
+    _trigger_background_tasks(activity, all_person_ids, current_user.id)
+
+    return _activity_to_response(activity)
 
 
 @router.get("/", response_model=list[ActivityResponse])
@@ -367,11 +443,26 @@ async def list_activities(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List activities with optional filtering and pagination."""
-    query = select(Activity).where(Activity.user_id == current_user.id)
+    """List activities with optional filtering and pagination.
+
+    When filtering by person_id, returns activities linked via the
+    activity_people join table OR via the legacy activities.person_id column.
+    """
+    query = (
+        select(Activity)
+        .options(selectinload(Activity.activity_people).selectinload(ActivityPerson.person))
+        .where(Activity.user_id == current_user.id)
+    )
 
     if person_id is not None:
-        query = query.where(Activity.person_id == person_id)
+        # Include activities linked via join table OR legacy person_id
+        subq = select(ActivityPerson.activity_id).where(ActivityPerson.person_id == person_id)
+        query = query.where(
+            or_(
+                Activity.person_id == person_id,
+                Activity.id.in_(subq),
+            )
+        )
     if property_id is not None:
         query = query.where(Activity.property_id == property_id)
     if interaction_type is not None:
@@ -381,7 +472,8 @@ async def list_activities(
 
     query = query.order_by(Activity.date.desc()).offset(skip).limit(limit)
     result = await db.execute(query)
-    return result.scalars().all()
+    activities = result.scalars().unique().all()
+    return [_activity_to_response(a) for a in activities]
 
 
 @router.get("/{activity_id}", response_model=ActivityResponse)
@@ -392,12 +484,14 @@ async def get_activity(
 ):
     """Get a single activity by ID."""
     result = await db.execute(
-        select(Activity).where(Activity.id == activity_id, Activity.user_id == current_user.id)
+        select(Activity)
+        .options(selectinload(Activity.activity_people).selectinload(ActivityPerson.person))
+        .where(Activity.id == activity_id, Activity.user_id == current_user.id)
     )
     activity = result.scalar_one_or_none()
     if not activity:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Activity not found")
-    return activity
+    return _activity_to_response(activity)
 
 
 @router.put("/{activity_id}", response_model=ActivityResponse)
@@ -409,7 +503,9 @@ async def update_activity(
 ):
     """Update an activity record."""
     result = await db.execute(
-        select(Activity).where(Activity.id == activity_id, Activity.user_id == current_user.id)
+        select(Activity)
+        .options(selectinload(Activity.activity_people).selectinload(ActivityPerson.person))
+        .where(Activity.id == activity_id, Activity.user_id == current_user.id)
     )
     activity = result.scalar_one_or_none()
     if not activity:
@@ -417,7 +513,25 @@ async def update_activity(
 
     update_data = payload.model_dump(exclude_unset=True)
 
-    if "person_id" in update_data:
+    # Handle people_ids update
+    new_people_ids = update_data.pop("people_ids", None)
+    if new_people_ids is not None:
+        # Validate all people
+        for pid in new_people_ids:
+            await _validate_person(db, pid, current_user.id)
+        # Remove existing join records
+        for ap in list(activity.activity_people):
+            await db.delete(ap)
+        await db.flush()
+        # Create new join records
+        await _create_activity_people(db, activity.id, new_people_ids)
+        # Update compat person_id
+        if len(new_people_ids) == 1:
+            activity.person_id = new_people_ids[0]
+        elif len(new_people_ids) == 0:
+            activity.person_id = None
+
+    if "person_id" in update_data and update_data["person_id"] is not None:
         await _validate_person(db, update_data["person_id"], current_user.id)
     if "property_id" in update_data and update_data["property_id"] is not None:
         await _validate_property(db, update_data["property_id"], current_user.id)
@@ -426,9 +540,16 @@ async def update_activity(
         setattr(activity, key, value)
 
     await db.flush()
-    await db.refresh(activity)
+
+    # Reload for response
+    result = await db.execute(
+        select(Activity)
+        .options(selectinload(Activity.activity_people).selectinload(ActivityPerson.person))
+        .where(Activity.id == activity.id)
+    )
+    activity = result.scalar_one()
     dashboard_cache.invalidate(current_user.id)
-    return activity
+    return _activity_to_response(activity)
 
 
 @router.delete("/{activity_id}", status_code=status.HTTP_204_NO_CONTENT)

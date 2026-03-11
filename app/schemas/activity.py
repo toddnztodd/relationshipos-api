@@ -11,6 +11,7 @@ from app.models.models import InteractionType
 class ActivityCreate(BaseModel):
     person_id: Optional[int] = None
     property_id: Optional[int] = None
+    people_ids: Optional[list[int]] = Field(None, description="Optional list of person IDs to attach to this activity")
     interaction_type: InteractionType
     date: Optional[datetime] = None  # defaults to now on server
     notes: Optional[str] = None
@@ -25,6 +26,7 @@ class ActivityCreate(BaseModel):
 class ActivityQuickLog(BaseModel):
     """Optimised for speed — minimal fields for fast mobile logging."""
     person_id: Optional[int] = None
+    people_ids: Optional[list[int]] = Field(None, description="Optional list of person IDs to attach to this activity")
     interaction_type: InteractionType
     notes: Optional[str] = None
     is_meaningful: bool = True
@@ -34,6 +36,7 @@ class ActivityQuickLog(BaseModel):
 class ActivityUpdate(BaseModel):
     person_id: Optional[int] = None
     property_id: Optional[int] = None
+    people_ids: Optional[list[int]] = Field(None, description="Optional list of person IDs to update on this activity")
     interaction_type: Optional[InteractionType] = None
     date: Optional[datetime] = None
     notes: Optional[str] = None
@@ -43,6 +46,15 @@ class ActivityUpdate(BaseModel):
     scheduled_date: Optional[date] = None
     scheduled_time: Optional[time] = None
     source: Optional[str] = Field(None, max_length=100)
+
+
+class ParticipantInfo(BaseModel):
+    """Minimal person info for activity participant list."""
+    id: int
+    first_name: str
+    last_name: str | None = None
+
+    model_config = {"from_attributes": True}
 
 
 class ActivityResponse(BaseModel):
@@ -61,6 +73,7 @@ class ActivityResponse(BaseModel):
     scheduled_time: time | None = None
     source: str | None = None
     created_at: datetime
+    participants: list[ParticipantInfo] = []
 
     model_config = {"from_attributes": True}
 

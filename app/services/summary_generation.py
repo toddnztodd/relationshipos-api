@@ -5,6 +5,7 @@ Called asynchronously when:
 - A voice_note activity is saved for a contact
 
 Uses OpenAI to generate a short 2-5 line plain text summary.
+Multi-person: queries activities via both Activity.person_id and activity_people join table.
 """
 
 import json
@@ -13,12 +14,13 @@ import os
 from typing import Optional
 
 from openai import AsyncOpenAI
-from sqlalchemy import select, desc
+from sqlalchemy import or_, select, desc
 
 from app.database import async_session_factory
 from app.models.models import (
     Person,
     Activity,
+    ActivityPerson,
     InteractionType,
     RapportAnchor,
     AnchorStatus,
@@ -65,6 +67,16 @@ def _get_client() -> Optional[AsyncOpenAI]:
             return None
         _client = AsyncOpenAI(api_key=api_key)
     return _client
+
+
+def _person_activity_filter(person_id: int):
+    """Return a filter clause that matches activities linked to person_id
+    via either the legacy Activity.person_id column or the activity_people join table."""
+    subq = select(ActivityPerson.activity_id).where(ActivityPerson.person_id == person_id)
+    return or_(
+        Activity.person_id == person_id,
+        Activity.id.in_(subq),
+    )
 
 
 async def generate_summary_background(
@@ -116,11 +128,11 @@ async def _generate_and_store(
                 f"- [{a.anchor_type}] {a.anchor_text}" for a in anchors
             ) if anchors else "(none)"
 
-            # 3. Get last 5 voice_note activities
+            # 3. Get last 5 voice_note activities (via legacy + join table)
             result = await db.execute(
                 select(Activity)
                 .where(
-                    Activity.person_id == person_id,
+                    _person_activity_filter(person_id),
                     Activity.user_id == user_id,
                     Activity.interaction_type == InteractionType.voice_note,
                     Activity.notes.isnot(None),
@@ -128,16 +140,16 @@ async def _generate_and_store(
                 .order_by(Activity.date.desc())
                 .limit(5)
             )
-            voice_notes = result.scalars().all()
+            voice_notes = result.scalars().unique().all()
             voice_notes_text = "\n---\n".join(
                 a.notes for a in voice_notes if a.notes
             ) if voice_notes else "(none)"
 
-            # 4. Get last 5 other interaction notes
+            # 4. Get last 5 other interaction notes (via legacy + join table)
             result = await db.execute(
                 select(Activity)
                 .where(
-                    Activity.person_id == person_id,
+                    _person_activity_filter(person_id),
                     Activity.user_id == user_id,
                     Activity.interaction_type != InteractionType.voice_note,
                     Activity.interaction_type != InteractionType.system_event,
@@ -146,7 +158,7 @@ async def _generate_and_store(
                 .order_by(Activity.date.desc())
                 .limit(5)
             )
-            interactions = result.scalars().all()
+            interactions = result.scalars().unique().all()
             interactions_text = "\n---\n".join(
                 f"[{a.interaction_type.value}] {a.notes}" for a in interactions if a.notes
             ) if interactions else "(none)"

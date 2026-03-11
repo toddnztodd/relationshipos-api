@@ -204,6 +204,7 @@ class Activity(Base):
     user = relationship("User", back_populates="activities")
     person = relationship("Person", back_populates="activities")
     property = relationship("Property", back_populates="activities")
+    activity_people = relationship("ActivityPerson", back_populates="activity", cascade="all, delete-orphan", lazy="selectin")
 
 
 class EmailThread(Base):
@@ -431,6 +432,22 @@ class RelationshipSummary(Base):
     # Relationships
     person = relationship("Person", foreign_keys=[person_id], back_populates="relationship_summaries")
     user = relationship("User", foreign_keys=[user_id])
+
+
+class ActivityPerson(Base):
+    """Join table linking activities to multiple people."""
+    __tablename__ = "activity_people"
+    __table_args__ = (
+        UniqueConstraint("activity_id", "person_id", name="uq_activity_person"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    activity_id = Column(Integer, ForeignKey("activities.id", ondelete="CASCADE"), nullable=False, index=True)
+    person_id = Column(Integer, ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Relationships
+    activity = relationship("Activity", back_populates="activity_people")
+    person = relationship("Person")
 
 
 class SuggestedOutreach(Base):
