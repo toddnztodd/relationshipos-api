@@ -67,6 +67,22 @@ class SummaryStatus(str, enum.Enum):
     dismissed = "dismissed"
 
 
+class SignalType(str, enum.Enum):
+    listing_opportunity = "listing_opportunity"
+    buyer_match = "buyer_match"
+    vendor_pressure = "vendor_pressure"
+    relationship_cooling = "relationship_cooling"
+    relationship_warming = "relationship_warming"
+    community_cluster = "community_cluster"
+
+
+class SignalSourceType(str, enum.Enum):
+    voice_note = "voice_note"
+    email = "email"
+    meeting = "meeting"
+    system = "system"
+
+
 class ListingResultType(str, enum.Enum):
     sold = "sold"
     withdrawn = "withdrawn"
@@ -700,6 +716,31 @@ class BuyerInterest(Base):
 
 
 # ── Property Owners ────────────────────────────────────────────────────────────
+
+
+# ── Signals ───────────────────────────────────────────────────────────────────
+
+
+class Signal(Base):
+    """An opportunity signal detected by the signal engine."""
+    __tablename__ = "signals"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    signal_type = Column(Enum(SignalType, name="signal_type"), nullable=False)
+    entity_type = Column(String(50), nullable=False)  # 'person', 'property', 'community'
+    entity_id = Column(Integer, nullable=False)
+    confidence = Column(Float, nullable=False, default=0.0)
+    source_contact_id = Column(Integer, ForeignKey("people.id", ondelete="SET NULL"), nullable=True)
+    source_type = Column(Enum(SignalSourceType, name="signal_source_type"), nullable=False, default=SignalSourceType.system)
+    description = Column(Text, nullable=False, default="")
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    source_contact = relationship("Person", foreign_keys=[source_contact_id])
 
 
 class PropertyOwner(Base):

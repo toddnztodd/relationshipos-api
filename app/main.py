@@ -42,6 +42,11 @@ from app.routes.buyer_interest import (
 )
 from app.routes.property_owners import router as property_owners_router
 from app.routes.property_intelligence import router as property_intelligence_router
+from app.routes.signals import (
+    router as signals_router,
+    property_router as signals_property_router,
+    person_router as signals_person_router,
+)
 
 settings = get_settings()
 
@@ -141,6 +146,11 @@ app.include_router(buyer_interest_property_router, prefix=API_PREFIX)  # /proper
 app.include_router(buyer_interest_top_router, prefix=API_PREFIX)       # /buyer-interest/{id}
 app.include_router(property_owners_router, prefix=API_PREFIX)          # /properties/{id}/owners
 app.include_router(property_intelligence_router, prefix=API_PREFIX)    # /properties/match, /properties/parse-voice
+
+# Opportunity Signals
+app.include_router(signals_router, prefix=API_PREFIX)                  # /signals, /signals/detect
+app.include_router(signals_property_router, prefix=API_PREFIX)         # /properties/{id}/signals
+app.include_router(signals_person_router, prefix=API_PREFIX)           # /people/{id}/signals
 
 
 @app.get("/", tags=["Health"])

@@ -126,8 +126,19 @@ class BriefingContact(BaseModel):
     suggested_outreach: str | None = None
 
 
+class BriefingSignal(BaseModel):
+    id: int
+    signal_type: str
+    entity_type: str
+    entity_id: int
+    entity_name: str | None = None
+    confidence: float
+    description: str
+
+
 class BriefingResponse(BaseModel):
     contacts: list[BriefingContact]
+    signals: list[BriefingSignal] = []
     total: int
     cached: bool = False
 

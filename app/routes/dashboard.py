@@ -12,6 +12,7 @@ from app.models.models import (
     Person,
     Property,
     Activity,
+    CommunityEntity,
     InteractionType,
     TierEnum,
     CadenceStatus,
@@ -19,6 +20,7 @@ from app.models.models import (
     AnchorStatus,
     RelationshipSummary,
     SummaryStatus,
+    Signal,
     SuggestedOutreach,
 )
 from app.schemas.dashboard import (
@@ -36,6 +38,7 @@ from app.schemas.dashboard import (
     AISuggestionsResponse,
     BriefingContact,
     BriefingAnchor,
+    BriefingSignal,
     BriefingResponse,
 )
 from app.services.auth import get_current_user
@@ -589,7 +592,43 @@ async def get_briefing(
             suggested_outreach=outreach_map.get(person.id),
         ))
 
+    # ── 8. Fetch top active signals (max 5, sorted by confidence desc) ──
+    sig_result = await db.execute(
+        select(Signal)
+        .where(Signal.user_id == uid, Signal.is_active == True)
+        .order_by(Signal.confidence.desc())
+        .limit(5)
+    )
+    briefing_signals = []
+    for sig in sig_result.scalars().all():
+        entity_name = None
+        if sig.entity_type == "person":
+            p_res = await db.execute(select(Person).where(Person.id == sig.entity_id))
+            p_obj = p_res.scalar_one_or_none()
+            if p_obj:
+                entity_name = f"{p_obj.first_name} {p_obj.last_name or ''}".strip()
+        elif sig.entity_type == "property":
+            pr_res = await db.execute(select(Property).where(Property.id == sig.entity_id))
+            pr_obj = pr_res.scalar_one_or_none()
+            if pr_obj:
+                entity_name = pr_obj.address
+        elif sig.entity_type == "community":
+            ce_res = await db.execute(select(CommunityEntity).where(CommunityEntity.id == sig.entity_id))
+            ce_obj = ce_res.scalar_one_or_none()
+            if ce_obj:
+                entity_name = ce_obj.name
+        briefing_signals.append(BriefingSignal(
+            id=sig.id,
+            signal_type=sig.signal_type.value,
+            entity_type=sig.entity_type,
+            entity_id=sig.entity_id,
+            entity_name=entity_name,
+            confidence=sig.confidence,
+            description=sig.description,
+        ))
+
     return BriefingResponse(
         contacts=contacts,
+        signals=briefing_signals,
         total=len(all_people),
     )
