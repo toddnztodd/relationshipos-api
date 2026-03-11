@@ -364,6 +364,9 @@ async def create_activity(
 
     dashboard_cache.invalidate(current_user.id)
 
+    # Commit so activity_people rows are visible in the reload query
+    await db.commit()
+
     # Reload with activity_people for response
     result = await db.execute(
         select(Activity)
@@ -419,6 +422,9 @@ async def quick_log_activity(
         )
 
     dashboard_cache.invalidate(current_user.id)
+
+    # Commit so activity_people rows are visible in the reload query
+    await db.commit()
 
     result = await db.execute(
         select(Activity)
