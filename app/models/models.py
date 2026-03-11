@@ -182,6 +182,23 @@ class Property(Base):
     checklist_items = relationship("ListingChecklistItem", back_populates="property", cascade="all, delete-orphan")
     context_node_links = relationship("PropertyContextNode", back_populates="property", cascade="all, delete-orphan")
 
+    # Property Intelligence fields
+    land_size = Column(Text, nullable=True)
+    cv = Column(Text, nullable=True)
+    last_sold_amount = Column(Text, nullable=True)
+    last_sold_date = Column(Date, nullable=True)
+    current_listing_price = Column(Text, nullable=True)
+    listing_url = Column(Text, nullable=True)
+    listing_agent = Column(Text, nullable=True)
+    listing_agency = Column(Text, nullable=True)
+    last_listed_date = Column(Date, nullable=True)
+    last_listing_result = Column(Enum(ListingResultType, name="listing_result_type"), nullable=True)
+    sellability = Column(Integer, nullable=True)
+
+    # New relationships
+    buyer_interests = relationship("BuyerInterest", back_populates="property", cascade="all, delete-orphan")
+    owner_links = relationship("PropertyOwner", back_populates="property", cascade="all, delete-orphan")
+
 
 class ActivityPerson(Base):
     """Join table linking activities to multiple people."""
@@ -564,6 +581,22 @@ class ContextNodeSuggestion(Base):
 # ── Community Entities ─────────────────────────────────────────────────────────
 
 
+class ListingResultType(str, enum.Enum):
+    sold = "sold"
+    withdrawn = "withdrawn"
+    expired = "expired"
+    private_sale = "private_sale"
+    unknown = "unknown"
+
+
+class BuyerInterestStage(str, enum.Enum):
+    seen = "seen"
+    interested = "interested"
+    hot = "hot"
+    offer = "offer"
+    purchased = "purchased"
+
+
 class CommunityEntityType(str, enum.Enum):
     business = "business"
     school = "school"
@@ -641,3 +674,47 @@ class CommunityEntityActivity(Base):
     # Relationships
     community_entity = relationship("CommunityEntity", back_populates="activity_links")
     activity = relationship("Activity", lazy="selectin")
+
+
+# ── Buyer Interest ─────────────────────────────────────────────────────────────
+
+
+class BuyerInterest(Base):
+    """Tracks a person's buying interest in a specific property."""
+    __tablename__ = "buyer_interest"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    property_id = Column(Integer, ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True)
+    person_id = Column(Integer, ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
+    stage = Column(Enum(BuyerInterestStage, name="buyer_interest_stage"), nullable=False, default=BuyerInterestStage.seen)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (UniqueConstraint("property_id", "person_id", name="uq_buyer_interest"),)
+
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    property = relationship("Property", back_populates="buyer_interests")
+    person = relationship("Person", lazy="selectin")
+
+
+# ── Property Owners ────────────────────────────────────────────────────────────
+
+
+class PropertyOwner(Base):
+    """Links a person as an owner of a property."""
+    __tablename__ = "property_owners"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    property_id = Column(Integer, ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True)
+    person_id = Column(Integer, ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (UniqueConstraint("property_id", "person_id", name="uq_property_owner"),)
+
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    property = relationship("Property", back_populates="owner_links")
+    person = relationship("Person", lazy="selectin")

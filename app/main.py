@@ -36,6 +36,12 @@ from app.routes.community_entities import (
     people_router as ce_people_router,
     properties_router as ce_properties_router,
 )
+from app.routes.buyer_interest import (
+    property_router as buyer_interest_property_router,
+    top_router as buyer_interest_top_router,
+)
+from app.routes.property_owners import router as property_owners_router
+from app.routes.property_intelligence import router as property_intelligence_router
 
 settings = get_settings()
 
@@ -129,6 +135,12 @@ app.include_router(context_suggestion_router, prefix=API_PREFIX)    # /context-n
 app.include_router(community_entities_router, prefix=API_PREFIX)    # /community-entities/
 app.include_router(ce_people_router, prefix=API_PREFIX)             # /people/{id}/community-entities
 app.include_router(ce_properties_router, prefix=API_PREFIX)         # /properties/{id}/community-entities
+
+# Property Intelligence (buyer interest, owners, match, parse-voice)
+app.include_router(buyer_interest_property_router, prefix=API_PREFIX)  # /properties/{id}/buyer-interest
+app.include_router(buyer_interest_top_router, prefix=API_PREFIX)       # /buyer-interest/{id}
+app.include_router(property_owners_router, prefix=API_PREFIX)          # /properties/{id}/owners
+app.include_router(property_intelligence_router, prefix=API_PREFIX)    # /properties/match, /properties/parse-voice
 
 
 @app.get("/", tags=["Health"])
