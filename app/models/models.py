@@ -134,6 +134,7 @@ class Person(Base):
     property_links = relationship("PropertyPerson", back_populates="person", cascade="all, delete-orphan")
     person_properties = relationship("PersonProperty", back_populates="person", cascade="all, delete-orphan")
     door_knock_sessions = relationship("DoorKnockSession", back_populates="person")
+    rapport_anchors = relationship("RapportAnchor", back_populates="person", cascade="all, delete-orphan")
 
 
 class Property(Base):
@@ -400,6 +401,6 @@ class RapportAnchor(Base):
     status = Column(Enum(AnchorStatus), nullable=False, default=AnchorStatus.suggested)
 
     # Relationships
-    person = relationship("Person", foreign_keys=[person_id])
+    person = relationship("Person", foreign_keys=[person_id], back_populates="rapport_anchors")
     activity = relationship("Activity", foreign_keys=[activity_id])
     user = relationship("User", foreign_keys=[user_id])
