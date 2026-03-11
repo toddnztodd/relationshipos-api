@@ -52,6 +52,11 @@ from app.routes.listing_checklists import (
     checklists_router as listing_checklists_router,
     items_router as listing_checklist_items_router,
 )
+from app.routes.territories import (
+    router as territories_router,
+    coverage_router as coverage_activities_router,
+    farming_router as farming_programs_router,
+)
 
 settings = get_settings()
 
@@ -161,6 +166,11 @@ app.include_router(signals_person_router, prefix=API_PREFIX)           # /people
 app.include_router(listing_checklist_property_router, prefix=API_PREFIX)  # /properties/{id}/listing-checklist
 app.include_router(listing_checklists_router, prefix=API_PREFIX)          # /checklists/{id}/phase, /checklists/{id}
 app.include_router(listing_checklist_items_router, prefix=API_PREFIX)     # /checklist-items-v2/{id}
+
+# Territory Intelligence
+app.include_router(territories_router, prefix=API_PREFIX)                    # /territories/
+app.include_router(coverage_activities_router, prefix=API_PREFIX)            # /coverage-activities/
+app.include_router(farming_programs_router, prefix=API_PREFIX)               # /farming-programs/
 
 
 @app.get("/", tags=["Health"])

@@ -821,3 +821,85 @@ class PropertyOwner(Base):
     user = relationship("User", foreign_keys=[user_id])
     property = relationship("Property", back_populates="owner_links")
     person = relationship("Person", lazy="selectin")
+
+
+# ── Territory Intelligence ────────────────────────────────────────────────────
+
+
+class Territory(Base):
+    """A geographic territory for farming and coverage tracking."""
+    __tablename__ = "territories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    type = Column(String(30), nullable=True)  # core_territory, expansion_zone, tactical_route
+    notes = Column(Text, nullable=True)
+    boundary_data = Column(JSON, nullable=True)
+    map_image_url = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    property_links = relationship("TerritoryProperty", back_populates="territory", cascade="all, delete-orphan", lazy="selectin")
+    coverage_activities = relationship("CoverageActivity", back_populates="territory", cascade="all, delete-orphan", lazy="selectin")
+    farming_programs = relationship("FarmingProgram", back_populates="territory", cascade="all, delete-orphan", lazy="selectin")
+
+
+class TerritoryProperty(Base):
+    """Links a property to a territory."""
+    __tablename__ = "territory_properties"
+
+    id = Column(Integer, primary_key=True, index=True)
+    territory_id = Column(Integer, ForeignKey("territories.id", ondelete="CASCADE"), nullable=False, index=True)
+    property_id = Column(Integer, ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True)
+    linked_manually = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (UniqueConstraint("territory_id", "property_id", name="uq_territory_property"),)
+
+    # Relationships
+    territory = relationship("Territory", back_populates="property_links")
+    property = relationship("Property", lazy="selectin")
+
+
+class CoverageActivity(Base):
+    """A coverage activity logged against a territory, property, or person."""
+    __tablename__ = "coverage_activities"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    territory_id = Column(Integer, ForeignKey("territories.id", ondelete="SET NULL"), nullable=True, index=True)
+    property_id = Column(Integer, ForeignKey("properties.id", ondelete="SET NULL"), nullable=True, index=True)
+    person_id = Column(Integer, ForeignKey("people.id", ondelete="SET NULL"), nullable=True, index=True)
+    activity_type = Column(String(30), nullable=False)
+    notes = Column(Text, nullable=True)
+    completed_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    territory = relationship("Territory", back_populates="coverage_activities")
+    property = relationship("Property", foreign_keys=[property_id])
+    person = relationship("Person", foreign_keys=[person_id])
+
+
+class FarmingProgram(Base):
+    """A recurring farming program linked to a territory."""
+    __tablename__ = "farming_programs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    territory_id = Column(Integer, ForeignKey("territories.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    recurrence = Column(String(30), nullable=True)
+    next_due_date = Column(Date, nullable=True)
+    last_completed_date = Column(Date, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    territory = relationship("Territory", back_populates="farming_programs")
