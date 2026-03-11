@@ -179,7 +179,6 @@ class Person(Base):
     important_dates_v2 = relationship("PersonImportantDate", back_populates="person", cascade="all, delete-orphan")
     property_links = relationship("PropertyPerson", back_populates="person", cascade="all, delete-orphan")
     person_properties = relationship("PersonProperty", back_populates="person", cascade="all, delete-orphan")
-    door_knock_sessions = relationship("DoorKnockSession", back_populates="person")
     rapport_anchors = relationship("RapportAnchor", back_populates="person", cascade="all, delete-orphan")
     relationship_summaries = relationship("RelationshipSummary", back_populates="person", cascade="all, delete-orphan")
     suggested_outreach = relationship("SuggestedOutreach", back_populates="person", cascade="all, delete-orphan")
