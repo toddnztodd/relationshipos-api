@@ -1,8 +1,12 @@
 """Property CRUD routes with filtering."""
-
-from typing import Optional
+import csv
+import io
+from datetime import date
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field, field_validator, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +14,74 @@ from app.database import get_db
 from app.models.models import User, Property
 from app.schemas.property import PropertyCreate, PropertyUpdate, PropertyResponse
 from app.services.auth import get_current_user
+
+
+# ── Bulk import schemas ───────────────────────────────────────────────────────
+
+PROPERTY_CATEGORIES = {
+    "current_listing",
+    "previous_listing",
+    "target_property",
+    "historic_transaction",
+    "appraisal_register",
+}
+
+
+class PropertyBulkItem(BaseModel):
+    """A single property row in a bulk import request."""
+    address: str = Field(..., min_length=1, max_length=500)
+    suburb: Optional[str] = None
+    property_type: Optional[str] = Field(None, max_length=100)
+    bedrooms: Optional[int] = Field(None, ge=0)
+    bathrooms: Optional[int] = Field(None, ge=0)
+    land_size: Optional[str] = None
+    cv_estimate: Optional[str] = None          # maps to Property.cv
+    last_sold_amount: Optional[str] = None
+    last_sold_date: Optional[date] = None
+    current_listing_price: Optional[str] = None
+    listing_agent: Optional[str] = None
+    listing_agency: Optional[str] = None
+    last_listed_date: Optional[date] = None
+    last_listing_result: Optional[str] = None
+    sellability: Optional[int] = Field(None, ge=1, le=5)
+    notes: Optional[str] = None               # stored in appraisal_stage as fallback note
+    tags: Optional[list[str]] = None          # informational only — not persisted
+    category: Optional[str] = None            # informational only — not persisted
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in PROPERTY_CATEGORIES:
+            raise ValueError(
+                f"category must be one of: {', '.join(sorted(PROPERTY_CATEGORIES))}"
+            )
+        return v
+
+    @field_validator("last_listing_result")
+    @classmethod
+    def validate_listing_result(cls, v: Optional[str]) -> Optional[str]:
+        valid = {"sold", "withdrawn", "expired", "private_sale", "unknown"}
+        if v is not None and v not in valid:
+            raise ValueError(f"last_listing_result must be one of: {', '.join(sorted(valid))}")
+        return v
+
+
+class PropertyBulkRequest(BaseModel):
+    properties: list[PropertyBulkItem] = Field(..., min_length=1, max_length=500)
+
+
+class PropertyBulkRowError(BaseModel):
+    row: int
+    address: Optional[str] = None
+    errors: list[str]
+
+
+class PropertyBulkResponse(BaseModel):
+    created: list[PropertyResponse]
+    failed: list[PropertyBulkRowError]
+    total_submitted: int
+    total_created: int
+    total_failed: int
 
 router = APIRouter(prefix="/properties", tags=["Properties"])
 
@@ -177,3 +249,140 @@ async def delete_property(
 
     await db.delete(prop)
     await db.flush()
+
+# ── Bulk import ───────────────────────────────────────────────────────────────
+
+@router.post("/bulk", response_model=PropertyBulkResponse, status_code=status.HTTP_207_MULTI_STATUS)
+async def bulk_import_properties(
+    payload: PropertyBulkRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Bulk-import up to 500 properties in a single request.
+
+    Each row is validated independently. Rows that fail validation are collected
+    in `failed` with per-row error messages; valid rows are created and returned
+    in `created`. The overall HTTP status is 207 Multi-Status so the caller can
+    inspect both successes and failures in one response.
+
+    Field mapping notes:
+    - `cv_estimate` → stored as `Property.cv`
+    - `notes` → stored as `Property.appraisal_stage` (free-text fallback)
+    - `tags` and `category` are validated but not persisted (no DB column yet)
+    """
+    created_props: list[PropertyResponse] = []
+    failed_rows: list[PropertyBulkRowError] = []
+
+    for idx, item in enumerate(payload.properties, start=1):
+        try:
+            prop = Property(
+                user_id=current_user.id,
+                address=item.address,
+                suburb=item.suburb,
+                property_type=item.property_type,
+                bedrooms=item.bedrooms,
+                bathrooms=item.bathrooms,
+                land_size=item.land_size,
+                cv=item.cv_estimate,
+                last_sold_amount=item.last_sold_amount,
+                last_sold_date=item.last_sold_date,
+                current_listing_price=item.current_listing_price,
+                listing_agent=item.listing_agent,
+                listing_agency=item.listing_agency,
+                last_listed_date=item.last_listed_date,
+                last_listing_result=item.last_listing_result,
+                sellability=item.sellability,
+                appraisal_stage=item.notes,  # best available free-text field
+            )
+            db.add(prop)
+            await db.flush()
+            await db.refresh(prop)
+            created_props.append(PropertyResponse.model_validate(prop))
+        except Exception as exc:
+            # Roll back only the failed row by expunging it if it was added
+            db.expunge_all()  # safe: already-flushed rows are committed below
+            failed_rows.append(
+                PropertyBulkRowError(
+                    row=idx,
+                    address=item.address,
+                    errors=[str(exc)],
+                )
+            )
+
+    if created_props:
+        await db.commit()
+
+    return PropertyBulkResponse(
+        created=created_props,
+        failed=failed_rows,
+        total_submitted=len(payload.properties),
+        total_created=len(created_props),
+        total_failed=len(failed_rows),
+    )
+
+
+# ── CSV export ────────────────────────────────────────────────────────────────
+
+# Columns to include in the CSV export (in order)
+_EXPORT_COLUMNS = [
+    "id", "address", "suburb", "city", "property_type",
+    "bedrooms", "bathrooms", "toilets", "ensuites", "living_rooms",
+    "has_pool", "garaging", "section_size_sqm", "house_size_sqm",
+    "land_size", "cv", "land_value", "perceived_value",
+    "last_sold_amount", "last_sold_date",
+    "current_listing_price", "listing_url", "listing_agent", "listing_agency",
+    "last_listed_date", "last_listing_result",
+    "sellability", "estimated_value",
+    "appraisal_stage", "appraisal_status",
+    "renovation_status", "years_owned", "council_valuation",
+    "created_at", "updated_at",
+]
+
+
+@router.get("/export", response_class=StreamingResponse)
+async def export_properties_csv(
+    category: Optional[str] = Query(None, description="Filter by appraisal_status value"),
+    appraisal_status: Optional[str] = Query(None, description="Filter by appraisal_status"),
+    suburb: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Export all properties as a CSV file.
+
+    Query params:
+    - `category` / `appraisal_status` — filter by appraisal_status column value
+    - `suburb` — case-insensitive partial match on suburb
+    """
+    query = select(Property).where(Property.user_id == current_user.id)
+
+    # `category` is an alias for appraisal_status to match the bulk import naming
+    status_filter = category or appraisal_status
+    if status_filter:
+        query = query.where(Property.appraisal_status == status_filter)
+    if suburb:
+        query = query.where(Property.suburb.ilike(f"%{suburb}%"))
+
+    query = query.order_by(Property.created_at.desc())
+    result = await db.execute(query)
+    properties = result.scalars().all()
+
+    # Build CSV in memory
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=_EXPORT_COLUMNS, extrasaction="ignore")
+    writer.writeheader()
+    for prop in properties:
+        row = {col: getattr(prop, col, None) for col in _EXPORT_COLUMNS}
+        # Normalise dates/datetimes to ISO strings for portability
+        for key, val in row.items():
+            if hasattr(val, "isoformat"):
+                row[key] = val.isoformat()
+            elif val is None:
+                row[key] = ""
+        writer.writerow(row)
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=properties_export.csv"},
+    )
