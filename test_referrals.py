@@ -12,8 +12,8 @@ import pytest
 import requests
 
 BASE_URL = os.environ.get("API_BASE_URL", "https://relationshipos-api.onrender.com/api/v1")
-TEST_EMAIL = "test@example.com"
-TEST_PASSWORD = "testpassword123"
+TEST_EMAIL = "todd@eves.co.nz"
+TEST_PASSWORD = "password123"
 
 # ── Auth helper ───────────────────────────────────────────────────────────────
 
@@ -39,7 +39,7 @@ def create_person(token, first_name, phone, email=None):
     }
     if email:
         payload["email"] = email
-    r = requests.post(f"{BASE_URL}/people", json=payload, headers=auth_headers(token))
+    r = requests.post(f"{BASE_URL}/people/", json=payload, headers=auth_headers(token))
     assert r.status_code == 201, f"Create person failed: {r.text}"
     return r.json()["id"]
 
