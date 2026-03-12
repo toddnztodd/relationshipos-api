@@ -174,6 +174,9 @@ class Person(Base):
     referral_member = Column(Boolean, default=False, nullable=False)
     referral_reward_amount = Column(Numeric(10, 2), default=250, nullable=False)
     referral_email_sent_at = Column(DateTime(timezone=True), nullable=True)
+    # Additional contact fields
+    phone_numbers = Column(JSON, nullable=True, default=list)  # array of {label, number} objects
+    date_of_birth = Column(Date, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

@@ -37,6 +37,11 @@ class PersonCreate(BaseModel):
     nickname: Optional[str] = Field(None, max_length=255)
     relationship_group_id: Optional[int] = Field(None, description="Shared household/group identifier")
     preferred_contact_channel: Optional[str] = Field(None, max_length=20, description="text | whatsapp | messenger | email | call")
+    phone_numbers: Optional[list[dict]] = Field(
+        default=None,
+        description="Additional phone numbers as [{\"label\": \"mobile\", \"number\": \"+64...\"}]",
+    )
+    date_of_birth: Optional[date] = None
 
 
 class PersonUpdate(BaseModel):
@@ -68,6 +73,11 @@ class PersonUpdate(BaseModel):
     nickname: Optional[str] = Field(None, max_length=255)
     relationship_group_id: Optional[int] = None
     preferred_contact_channel: Optional[str] = Field(None, max_length=20)
+    phone_numbers: Optional[list[dict]] = Field(
+        default=None,
+        description="Additional phone numbers as [{\"label\": \"mobile\", \"number\": \"+64...\"}]",
+    )
+    date_of_birth: Optional[date] = None
 
 
 class PersonResponse(BaseModel):
@@ -98,6 +108,8 @@ class PersonResponse(BaseModel):
     nickname: Optional[str] = None
     relationship_group_id: Optional[int] = None
     preferred_contact_channel: Optional[str] = None
+    phone_numbers: Optional[list[dict]] = None
+    date_of_birth: Optional[date] = None
     last_interaction_at: Optional[datetime] = None
     last_interaction_channel: Optional[str] = None
     contact_status: str = "active"
