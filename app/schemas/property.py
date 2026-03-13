@@ -10,6 +10,11 @@ class PropertyCreate(BaseModel):
     address: str = Field(..., max_length=500)
     suburb: Optional[str] = Field(None, max_length=255)
     city: Optional[str] = Field(None, max_length=255)
+    # Address intelligence fields
+    formatted_address: Optional[str] = None
+    postcode: Optional[str] = Field(None, max_length=20)
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     bedrooms: Optional[int] = Field(None, ge=0)
     bathrooms: Optional[int] = Field(None, ge=0)
     toilets: Optional[int] = Field(None, ge=0)
@@ -44,6 +49,11 @@ class PropertyUpdate(BaseModel):
     address: Optional[str] = Field(None, max_length=500)
     suburb: Optional[str] = Field(None, max_length=255)
     city: Optional[str] = Field(None, max_length=255)
+    # Address intelligence fields
+    formatted_address: Optional[str] = None
+    postcode: Optional[str] = Field(None, max_length=20)
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     bedrooms: Optional[int] = Field(None, ge=0)
     bathrooms: Optional[int] = Field(None, ge=0)
     toilets: Optional[int] = Field(None, ge=0)
@@ -80,6 +90,11 @@ class PropertyResponse(BaseModel):
     address: str
     suburb: str | None
     city: str | None
+    # Address intelligence fields
+    formatted_address: str | None = None
+    postcode: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
     bedrooms: int | None
     bathrooms: int | None
     toilets: int | None = None
