@@ -65,6 +65,10 @@ from app.routes.door_knock_v2 import (
 )
 from app.routes.match_engine import router as match_engine_router
 from app.routes.referrals import router as referrals_router
+from app.routes.appraisal_recordings import (
+    property_router as appraisal_property_router,
+    appraisal_router as appraisals_top_router,
+)
 
 settings = get_settings()
 
@@ -191,6 +195,10 @@ app.include_router(match_engine_router, prefix=API_PREFIX)                   # /
 
 # Referral Programme
 app.include_router(referrals_router, prefix=API_PREFIX)                       # /people/{id}/register-referral-member, /referrals
+
+# Appraisal Recordings
+app.include_router(appraisal_property_router, prefix=API_PREFIX)              # /properties/{id}/appraisals
+app.include_router(appraisals_top_router, prefix=API_PREFIX)                  # /appraisals/{id}
 
 
 @app.get("/", tags=["Health"])

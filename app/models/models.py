@@ -995,3 +995,26 @@ class Referral(Base):
     user = relationship("User", foreign_keys=[user_id], lazy="selectin")
     referrer = relationship("Person", foreign_keys=[referrer_person_id], lazy="selectin")
     referred = relationship("Person", foreign_keys=[referred_person_id], lazy="selectin")
+
+
+# ── Appraisal Recordings ──────────────────────────────────────────────────────
+
+
+class AppraisalRecording(Base):
+    """A recorded appraisal conversation linked to a property."""
+    __tablename__ = "appraisal_recordings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    property_id = Column(Integer, ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    audio_url = Column(Text, nullable=True)
+    transcript = Column(Text, nullable=True)
+    summary = Column(Text, nullable=True)
+    extracted_intelligence = Column(JSON, nullable=True)
+    detected_signals = Column(JSON, nullable=True)
+    duration_seconds = Column(Integer, nullable=True)
+
+    # Relationships
+    property = relationship("Property", foreign_keys=[property_id])
+    user = relationship("User", foreign_keys=[user_id])
