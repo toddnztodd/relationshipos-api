@@ -120,6 +120,7 @@ class PropertyResponse(BaseModel):
     listing_url: str | None = None
     listing_agent: str | None = None
     listing_agency: str | None = None
+    listing_agent_id: int | None = None
     last_listed_date: date | None = None
     last_listing_result: str | None = None
     sellability: int | None = None

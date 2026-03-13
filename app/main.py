@@ -69,6 +69,7 @@ from app.routes.appraisal_recordings import (
     property_router as appraisal_property_router,
     appraisal_router as appraisals_top_router,
 )
+from app.routes.agents import router as agents_router
 
 settings = get_settings()
 
@@ -199,6 +200,9 @@ app.include_router(referrals_router, prefix=API_PREFIX)                       # 
 # Appraisal Recordings
 app.include_router(appraisal_property_router, prefix=API_PREFIX)              # /properties/{id}/appraisals
 app.include_router(appraisals_top_router, prefix=API_PREFIX)                  # /appraisals/{id}
+
+# Agents Intelligence
+app.include_router(agents_router, prefix=API_PREFIX)                          # /agents/
 
 
 @app.get("/", tags=["Health"])

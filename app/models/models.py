@@ -234,6 +234,9 @@ class Property(Base):
     checklist_items = relationship("ListingChecklistItem", back_populates="property", cascade="all, delete-orphan")
     context_node_links = relationship("PropertyContextNode", back_populates="property", cascade="all, delete-orphan")
 
+    # Agent FK (migration 024)
+    listing_agent_id = Column(Integer, ForeignKey("agents.id", ondelete="SET NULL"), nullable=True, index=True)
+
     # Property Intelligence fields
     land_size = Column(Text, nullable=True)
     cv = Column(Text, nullable=True)
@@ -253,6 +256,7 @@ class Property(Base):
     # New relationships
     buyer_interests = relationship("BuyerInterest", back_populates="property", cascade="all, delete-orphan")
     owner_links = relationship("PropertyOwner", back_populates="property", cascade="all, delete-orphan")
+    listing_agent_rel = relationship("Agent", back_populates="properties", foreign_keys=[listing_agent_id])
 
 
 class ActivityPerson(Base):
@@ -995,6 +999,25 @@ class Referral(Base):
     user = relationship("User", foreign_keys=[user_id], lazy="selectin")
     referrer = relationship("Person", foreign_keys=[referrer_person_id], lazy="selectin")
     referred = relationship("Person", foreign_keys=[referred_person_id], lazy="selectin")
+
+
+# ── Agents ────────────────────────────────────────────────────────────────────
+
+
+class Agent(Base):
+    """A real estate agent (competitor or collaborator) tracked by the system."""
+    __tablename__ = "agents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False, index=True)
+    agency = Column(String(255), nullable=True, index=True)
+    phone = Column(String(100), nullable=True)
+    email = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Relationships
+    properties = relationship("Property", back_populates="listing_agent_rel", foreign_keys="Property.listing_agent_id")
 
 
 # ── Appraisal Recordings ──────────────────────────────────────────────────────

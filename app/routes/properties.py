@@ -14,6 +14,7 @@ from app.database import get_db
 from app.models.models import User, Property
 from app.schemas.property import PropertyCreate, PropertyUpdate, PropertyResponse
 from app.services.auth import get_current_user
+from app.services.agent_detection import detect_and_link_agent
 
 
 # ── Bulk import schemas ───────────────────────────────────────────────────────
@@ -119,6 +120,14 @@ async def create_property(
     db.add(prop)
     await db.flush()
     await db.refresh(prop)
+
+    # Auto-detect and link agent if listing_agent provided
+    if payload.listing_agent:
+        await detect_and_link_agent(
+            db, prop.id, payload.listing_agent, agency=payload.listing_agency,
+        )
+        await db.refresh(prop)
+
     return prop
 
 
@@ -237,6 +246,14 @@ async def bulk_import_properties(
             db.add(prop)
             await db.flush()
             await db.refresh(prop)
+
+            # Auto-detect and link agent if listing_agent provided
+            if item.listing_agent:
+                await detect_and_link_agent(
+                    db, prop.id, item.listing_agent, agency=item.listing_agency,
+                )
+                await db.refresh(prop)
+
             created_props.append(PropertyResponse.model_validate(prop))
         except Exception as exc:
             # Roll back only the failed row by expunging it if it was added
@@ -367,10 +384,19 @@ async def update_property(
     if not prop:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
 
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    update_data = payload.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
         setattr(prop, key, value)
 
     await db.flush()
+
+    # Auto-detect and link agent if listing_agent was updated
+    if "listing_agent" in update_data and update_data["listing_agent"]:
+        await detect_and_link_agent(
+            db, prop.id, update_data["listing_agent"],
+            agency=update_data.get("listing_agency") or prop.listing_agency,
+        )
+
     await db.refresh(prop)
     return prop
 
