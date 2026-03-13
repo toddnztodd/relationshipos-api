@@ -142,6 +142,13 @@ class Person(Base):
     phone = Column(String(50), nullable=False, index=True)
     email = Column(String(255), nullable=True)
     suburb = Column(String(255), nullable=True)
+    # Address fields (migration 025)
+    address_line_1 = Column(String(255), nullable=True)
+    address_line_2 = Column(String(255), nullable=True)
+    city = Column(String(255), nullable=True)
+    postcode = Column(String(20), nullable=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
     relationship_type = Column(String(100), nullable=True)
     relationship_types = Column(JSON, nullable=True, default=list)  # multi-select array
     influence_score = Column(Float, nullable=True, default=0.0)

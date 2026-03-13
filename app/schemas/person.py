@@ -14,6 +14,13 @@ class PersonCreate(BaseModel):
     phone: str = Field(..., max_length=50, description="Primary identity key")
     email: Optional[str] = Field(None, max_length=255)
     suburb: Optional[str] = Field(None, max_length=255)
+    # Address fields (migration 025)
+    address_line_1: Optional[str] = Field(None, max_length=255)
+    address_line_2: Optional[str] = Field(None, max_length=255)
+    city: Optional[str] = Field(None, max_length=255)
+    postcode: Optional[str] = Field(None, max_length=20)
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     relationship_type: Optional[str] = Field(None, max_length=100, examples=["buyer", "seller", "investor"])
     relationship_types: Optional[list[str]] = Field(
         default=None,
@@ -50,6 +57,13 @@ class PersonUpdate(BaseModel):
     phone: Optional[str] = Field(None, max_length=50)
     email: Optional[str] = Field(None, max_length=255)
     suburb: Optional[str] = Field(None, max_length=255)
+    # Address fields (migration 025)
+    address_line_1: Optional[str] = Field(None, max_length=255)
+    address_line_2: Optional[str] = Field(None, max_length=255)
+    city: Optional[str] = Field(None, max_length=255)
+    postcode: Optional[str] = Field(None, max_length=20)
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     relationship_type: Optional[str] = Field(None, max_length=100)
     relationship_types: Optional[list[str]] = Field(
         default=None,
@@ -88,6 +102,13 @@ class PersonResponse(BaseModel):
     phone: str
     email: Optional[str] = None
     suburb: Optional[str] = None
+    # Address fields (migration 025)
+    address_line_1: Optional[str] = None
+    address_line_2: Optional[str] = None
+    city: Optional[str] = None
+    postcode: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     relationship_type: Optional[str] = None
     relationship_types: Optional[list[str]] = None
     influence_score: Optional[float] = None
