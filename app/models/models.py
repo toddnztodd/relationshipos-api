@@ -51,6 +51,7 @@ class TierEnum(str, enum.Enum):
     A = "A"
     B = "B"
     C = "C"
+    Private = "Private"
 
 
 class CadenceStatus(str, enum.Enum):
